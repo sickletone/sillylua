@@ -213,7 +213,19 @@
             return tween
         end
 
-        function library:resizify(frame)
+        library.resize_handles = {}
+
+        function library:set_resize_handles_visible(shown)
+            for _, handle in ipairs(library.resize_handles) do
+                handle.BackgroundTransparency = shown and 0.2 or 1
+                handle.TextTransparency = shown and 0 or 1
+            end
+        end
+
+        function library:resizify(frame, min_width, min_height)
+            min_width = min_width or 320
+            min_height = min_height or 300
+
             local handle = Instance.new("TextButton")
             handle.Name = "ResizeHandle"
             handle.AnchorPoint = vec2(1, 1)
@@ -221,24 +233,27 @@
             handle.Size = dim2(0, 24, 0, 22)
             handle.BorderSizePixel = 0
             handle.BackgroundColor3 = themes.preset.accent
-            handle.BackgroundTransparency = 0.2
+            handle.BackgroundTransparency = 1
             handle.Text = "◢"
             handle.TextColor3 = rgb(255, 255, 255)
+            handle.TextTransparency = 1
             handle.TextSize = 13
             handle.AutoButtonColor = false
             handle.ZIndex = 20
             handle.Parent = frame
             library:apply_theme(handle, "accent", "BackgroundColor3")
+            insert(library.resize_handles, handle)
 
             local resizing, drag_type, start, start_size = false, nil, nil, nil
             local function update_size(position)
                 if not resizing or not start_size then return end
                 local viewport = (ws.CurrentCamera or camera).ViewportSize
-                local scale = library.current_window and library.current_window.items.ui_scale.Scale or 1
-                local width = clamp(start_size.X.Offset + (position.X - start.X) / scale, min(320, viewport.X / scale), max(1, viewport.X / scale))
-                local height = clamp(start_size.Y.Offset + (position.Y - start.Y) / scale, min(300, viewport.Y / scale), max(1, viewport.Y / scale))
+                local scale_object = frame:FindFirstChildOfClass("UIScale")
+                local scale = scale_object and scale_object.Scale or 1
+                local width = clamp(start_size.X.Offset + (position.X - start.X) / scale, min_width, max(1, viewport.X / scale))
+                local height = clamp(start_size.Y.Offset + (position.Y - start.Y) / scale, min_height, max(1, viewport.Y / scale))
                 local window = library.current_window
-                if window and window.items.main == frame then
+                if window and window.items.main == frame and window.set_size then
                     window:set_size(width, height)
                 else
                     frame.Size = dim2(0, width, 0, height)
@@ -285,7 +300,8 @@
             return (y_cond and x_cond)
         end
 
-        function library:draggify(frame)
+        function library:draggify(frame, header_height)
+            header_height = header_height or 70
             local dragging, drag_type, origin, start = false, nil, nil, nil
             local function move_to(position)
                 if not dragging then return end
@@ -295,7 +311,7 @@
                 library:close_element()
             end
             frame.InputBegan:Connect(function(input)
-                local header_input = input.Position.Y - frame.AbsolutePosition.Y <= 70
+                local header_input = input.Position.Y - frame.AbsolutePosition.Y <= header_height
                 if header_input and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
                     dragging, drag_type, start, origin = true, input.UserInputType, input.Position, frame.Position
                 end
@@ -523,6 +539,16 @@
             end
         end 
 
+        -- Popup host resolution: each element records its owning window, and popup frames
+        -- parent into that window's ScreenGui instead of a global one (sub window support).
+        function library:set_owner_gui(gui)
+            library.owner_gui = gui
+        end
+
+        function library:popup_parent()
+            return library.owner_gui or library[ "items" ]
+        end
+
         function library:create(instance, options)
             local ins = Instance.new(instance)
             for prop, value in pairs(options) do
@@ -592,6 +618,7 @@
                 Parent = coregui; Name = "MileniumMobileToggle"; Enabled = true;
                 DisplayOrder = 10000; ZIndexBehavior = Enum.ZIndexBehavior.Sibling; IgnoreGuiInset = true;
             })
+            library:set_owner_gui(library[ "items" ])
 
             local items = cfg.items; do
                 items[ "main" ] = library:create( "Frame" , {
@@ -861,8 +888,19 @@
 
             function cfg.toggle_menu(bool)
                 library[ "items" ].Enabled = bool
-                library[ "other" ].Enabled = bool
-            end 
+            end
+
+            function cfg:select()
+                library:set_owner_gui(library[ "items" ])
+            end
+            cfg:select()
+
+            library:connection(uis.InputBegan, function(input, game_event)
+                if game_event then return end
+                if input.KeyCode == Enum.KeyCode.Insert then
+                    cfg.toggle_menu(not library[ "items" ].Enabled)
+                end
+            end)
                 
             return setmetatable(cfg, library)
         end 
@@ -2199,7 +2237,7 @@
                 -- Element Holder
                     items[ "dropdown_holder" ] = library:create( "Frame" , {
                         BorderColor3 = rgb(0, 0, 0);
-                        Parent = library[ "items" ];
+                        Parent = library:popup_parent();
                         Name = "\0";
                         Visible = true;
                         BackgroundTransparency = 1;
@@ -2816,7 +2854,7 @@
 
             function cfg.set_visible(bool)
                 items[ "colorpicker_fade" ].BackgroundTransparency = 0
-                items[ "colorpicker_holder" ].Parent = bool and library[ "items" ] or library[ "other" ]
+                items[ "colorpicker_holder" ].Parent = bool and library:popup_parent() or library[ "other" ]
                 items[ "colorpicker_holder" ].Position = dim_offset(items[ "colorpicker" ].AbsolutePosition.X, items[ "colorpicker" ].AbsolutePosition.Y + items[ "colorpicker" ].AbsoluteSize.Y + 45)
 
                 library:tween(items[ "colorpicker_fade" ], {BackgroundTransparency = 1}, Enum.EasingStyle.Quad, 0.4)
@@ -3202,7 +3240,7 @@
                 -- Mode Holder
                     items[ "dropdown" ] = library:create( "Frame" , {
                         BorderColor3 = rgb(0, 0, 0);
-                        Parent = library.items;
+                        Parent = library:popup_parent();
                         Name = "\0";
                         BackgroundTransparency = 1;
                         Position = dim2(0, 0, 0, 0);
@@ -3491,11 +3529,11 @@
                 sanity = true; -- made this for my own sanity.
             }
 
-            local items = cfg.items; do 
+            local items = cfg.items; do
                 items[ "outline" ] = library:create( "Frame" , {
                     Name = "\0";
                     Visible = true;
-                    Parent = library[ "items" ];
+                    Parent = library:popup_parent();
                     BorderColor3 = rgb(0, 0, 0);
                     Size = dim2(0, 0, 0, 0);
                     ClipsDescendants = true;
@@ -3705,16 +3743,370 @@
             return img
         end
 
+        -- Sub window: a second standalone window with full component support.
+        -- Same API as the main window's returned object: ex:tab/ex:column/ex:section/...
+        -- Draggable by its title bar, resizable by the corner handle, closable.
+        function library:sub_window(properties)
+            local cfg = {
+                name = properties.name or properties.Name or "sub";
+                suffix = properties.suffix or properties.Suffix or "";
+                size = properties.size or properties.Size or dim2(0, 420, 0, 320);
+                header_height = properties.headerHeight or properties.header_height or 34;
+                popup_can_escape = properties.popupCanEscape or false;
+                owner_gui = library:create("ScreenGui", {
+                    Parent = coregui;
+                    Name = "\0";
+                    Enabled = true;
+                    DisplayOrder = (library[ "items" ] and (library[ "items" ].DisplayOrder + 1) or 1);
+                    ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
+                    IgnoreGuiInset = true;
+                });
+                pages = {};
+                sub_windows = {};
+                items = {};
+            }
+
+            -- Popups created inside this sub window stay inside it.
+            library:set_owner_gui(cfg.owner_gui)
+
+            local items = cfg.items; do
+                items[ "main" ] = library:create( "Frame", {
+                    Parent = cfg.owner_gui;
+                    Size = cfg.size;
+                    Name = "\0";
+                    Position = properties.position or properties.Position or dim2(0.5, -cfg.size.X.Offset / 2, 0.5, -cfg.size.Y.Offset / 2);
+                    BorderColor3 = rgb(0, 0, 0);
+                    BorderSizePixel = 0;
+                    BackgroundColor3 = themes.preset.background;
+                }); library:apply_theme(items[ "main" ], "background", "BackgroundColor3")
+                library:create("UICorner", {Parent = items[ "main" ]; CornerRadius = dim(0, 8)})
+
+                -- Title bar
+                items[ "titlebar" ] = library:create( "Frame", {
+                    Parent = items[ "main" ];
+                    BackgroundTransparency = 1;
+                    Name = "\0";
+                    Size = dim2(1, -58, 0, cfg.header_height);
+                    Position = dim2(0, 8, 0, 4);
+                    BorderSizePixel = 0;
+                    ZIndex = 5;
+                });
+                items[ "title" ] = library:create( "TextLabel", {
+                    FontFace = fonts.font;
+                    Parent = items[ "titlebar" ];
+                    Text = cfg.name .. cfg.suffix;
+                    TextColor3 = themes.preset.text;
+                    Name = "\0";
+                    Size = dim2(1, 0, 1, 0);
+                    BackgroundTransparency = 1;
+                    TextXAlignment = Enum.TextXAlignment.Left;
+                    BorderSizePixel = 0;
+                    LibraryOrder = 1;
+                    TextSize = 16;
+                    ZIndex = 6;
+                });
+                library:apply_theme(items[ "title" ], "text", "TextColor3")
+
+                -- Page opener API mirrors window:tab(), minus multi-section switching.
+                items[ "content" ] = nil
+            end
+
+            function cfg.apply_viewport()
+                local viewport = (ws.CurrentCamera or camera).ViewportSize
+                local w = min(cfg.size.X.Offset, viewport.X - 12)
+                local h = min(cfg.size.Y.Offset, viewport.Y - 12)
+                cfg.size = dim2(0, w, 0, h)
+                items[ "main" ].Size = cfg.size
+                local pos = items[ "main" ].Position
+                items[ "main" ].Position = dim2(0, clamp(pos.X.Offset, 0, max(0, viewport.X - w)),
+                    0, clamp(pos.Y.Offset, 0, max(0, viewport.Y - h)))
+            end
+
+            function cfg:set_size(width, height)
+                cfg.size = dim2(0, width, 0, height)
+                cfg.apply_viewport()
+            end
+
+            library:draggify(items[ "main" ], cfg.header_height + 4)
+            library:resizify(items[ "main" ], 320, 220)
+
+            -- Mini tab pages: same behavior as main window tabs (mini tab bar), tiny canvas.
+            local page_switcher = library:create( "Frame", {
+                Parent = items[ "main" ];
+                BackgroundTransparency = 1;
+                Name = "\0";
+                Position = dim2(0, 10, 0, cfg.header_height + 8);
+                Size = dim2(1, -20, 0, 26);
+                BorderSizePixel = 0;
+                ZIndex = 7;
+            });
+            library:create("UIListLayout", {Parent = page_switcher; FillDirection = Enum.FillDirection.Horizontal; Padding = dim(0, 6); SortOrder = Enum.SortOrder.LayoutOrder});
+
+            local page_body = library:create( "Frame", {
+                Parent = items[ "main" ];
+                BackgroundTransparency = 1;
+                Name = "\0";
+                Position = dim2(0, 10, 0, cfg.header_height + 38);
+                Size = dim2(1, -20, 1, -(cfg.header_height + 48));
+                BorderSizePixel = 0;
+            });
+            library:create("UIListLayout", {FillDirection = Enum.FillDirection.Vertical; HorizontalFlex = Enum.UIFlexAlignment.Fill; VerticalFlex = Enum.UIFlexAlignment.Fill; Parent = page_body; Padding = dim(0, 7); SortOrder = Enum.SortOrder.LayoutOrder});
+
+            function cfg:tab(options)
+                options = options or {}
+                local label = options.name or options.Name or "tab"
+                local page = {enabled = true; items = {}; name = label; sub_pages = {}}
+                local btn = library:create( "TextButton", {
+                    FontFace = fonts.font;
+                    TextColor3 = themes.preset.muted;
+                    Text = label;
+                    Parent = page_switcher;
+                    Name = "\0";
+                    AutoButtonColor = false;
+                    Size = dim2(0, 0, 1, 0);
+                    BackgroundTransparency = 1;
+                    AutomaticSize = Enum.AutomaticSize.X;
+                    TextSize = 14;
+                    BorderSizePixel = 0;
+                    LayoutOrder = #cfg.pages + 1;
+                });
+                library:apply_theme(btn, "muted", "TextColor3")
+
+                local body = library:create( "Frame", {
+                    Parent = page_body;
+                    BackgroundTransparency = 1;
+                    Name = "\0";
+                    Visible = false;
+                    Size = dim2(1, 0, 1, 0);
+                    BorderSizePixel = 0;
+                });
+                library:create("UIListLayout", {FillDirection = Enum.FillDirection.Vertical; HorizontalFlex = Enum.UIFlexAlignment.Fill; VerticalFlex = Enum.UIFlexAlignment.Fill; Parent = body; Padding = dim(0, 7); SortOrder = Enum.SortOrder.LayoutOrder});
+
+                page.items["body"] = body
+                page.items["button"] = btn
+
+                function page.open_page()
+                    for _, other in ipairs(cfg.pages) do
+                        other.items["body"].Visible = false
+                        other.items["button"].TextColor3 = themes.preset.muted
+                    end
+                    body.Visible = true
+                    btn.TextColor3 = themes.preset.accent
+                end
+
+                btn.Activated:Connect(page.open_page)
+
+                -- Widget parents: sections/columns route through setmetatable(cfg, library),
+                -- so :column/:section work with no additional plumbing.
+                local page_meta = setmetatable(page, library)
+                table.insert(cfg.pages, page_meta)
+                if #cfg.pages == 1 then page.open_page() end
+                return page_meta
+            end
+
+            function cfg:column(properties)
+                properties = properties or {}
+                local col = {items = {}; size = properties.size or 1}
+                local f = library:create("Frame", {
+                    Parent = self.items["body"];
+                    BackgroundTransparency = 1;
+                    Name = "\0";
+                    Size = dim2(0, 0, col.size, 0);
+                    BorderSizePixel = 0;
+                });
+                library:create("UIListLayout", {
+                    FillDirection = Enum.FillDirection.Vertical;
+                    HorizontalFlex = Enum.UIFlexAlignment.Fill;
+                    Parent = f;
+                    Padding = dim(0, 10);
+                    SortOrder = Enum.SortOrder.LayoutOrder;
+                })
+                col.items["column"] = f
+                return setmetatable(col, library)
+            end
+
+            -- Close button and popups-inside-owner support.
+            local close_btn = library:create( "TextButton", {
+                FontFace = fonts.font;
+                Parent = items[ "main" ];
+                Text = "×";
+                TextColor3 = themes.preset.muted;
+                Name = "\0";
+                AutoButtonColor = true;
+                Size = dim2(0, 22, 0, 22);
+                Position = dim2(1, -24, 0, 5);
+                BackgroundTransparency = 1;
+                TextSize = 18;
+                ZIndex = 6;
+                BorderSizePixel = 0;
+            });
+            close_btn.Activated:Connect(function()
+                cfg.owner_gui.Enabled = false
+                library:set_owner_gui(library[ "items" ])
+            end)
+
+            function cfg:open()
+                library:set_owner_gui(cfg.owner_gui)
+                cfg.owner_gui.Enabled = true
+            end
+
+            function cfg:close()
+                cfg.owner_gui.Enabled = false
+                library:set_owner_gui(library[ "items" ])
+            end
+
+            function cfg:destroy()
+                cfg.owner_gui:Destroy()
+                library:set_owner_gui(library[ "items" ])
+            end
+
+            return setmetatable(cfg, library)
+        end
+
+        -- Tab box: a horizontal strip of tabs whose pages live side-by-side.
+        -- Useful to stack left/middle/right groups of tabs inside one window or sub window.
+        function library:tabbox(properties)
+            properties = properties or {}
+            local cfg = {
+                side = properties.side or properties.Side or "left"; -- "left" | "middle" | "right"
+                tabs = {};
+                current = nil;
+                items = {};
+            }
+
+            -- Where the tab buttons sit: left/middle/right affects alignment only.
+            local alignment = cfg.side == "left" and Enum.HorizontalAlignment.Left
+                or cfg.side == "right" and Enum.HorizontalAlignment.Right
+                or Enum.HorizontalAlignment.Center
+
+            local host
+            do
+                -- Parent: existing window content column if available, else next to main frame.
+                local parent_frame = self.items and (self.items["body"] or self.items["column"]) or nil
+                host = library:create("Frame", {
+                    Parent = parent_frame; -- nil fallback reparents to PlayerGui later
+                    BackgroundTransparency = 1;
+                    Name = "\0";
+                    Size = dim2(1, 0, 1, 0);
+                    BorderSizePixel = 0;
+                });
+
+                -- Tab strip
+                cfg.items["strip"] = library:create("Frame", {
+                    Parent = host;
+                    BackgroundTransparency = 1;
+                    Name = "\0";
+                    Size = dim2(1, 0, 0, 30);
+                    BorderSizePixel = 0;
+                });
+                library:create("UIListLayout", {
+                    FillDirection = Enum.FillDirection.Horizontal;
+                    HorizontalAlignment = alignment;
+                    Padding = dim(0, 8);
+                    Parent = cfg.items["strip"];
+                    SortOrder = Enum.SortOrder.LayoutOrder;
+                })
+
+                -- Body
+                cfg.items["body"] = library:create("Frame", {
+                    Parent = host;
+                    BackgroundTransparency = 1;
+                    Name = "\0";
+                    Position = dim2(0, 0, 0, 32);
+                    Size = dim2(1, 0, 1, -32);
+                    BorderSizePixel = 0;
+                });
+                library:create("UIListLayout", {
+                    FillDirection = Enum.FillDirection.Vertical;
+                    HorizontalFlex = Enum.UIFlexAlignment.Fill;
+                    VerticalFlex = Enum.UIFlexAlignment.Fill;
+                    Parent = cfg.items["body"];
+                    Padding = dim(0, 10);
+                    SortOrder = Enum.SortOrder.LayoutOrder;
+                })
+
+                if parent_frame == nil then
+                    -- Defer reparenting until a window has a body to attach to.
+                    task.defer(function()
+                        for _, w in ipairs({library.current_window}) do
+                            local body = w and w.items and (w.items["global_fade"] or w.items["tab_holder"])
+                            if body then host.Parent = body break end
+                        end
+                    end)
+                end
+            end
+
+            function cfg:tab(options)
+                options = options or {}
+                local label = options.name or options.Name or "tab"
+                local page = {items = {}; name = label}
+                local btn = library:create("TextButton", {
+                    FontFace = fonts.font;
+                    Text = label;
+                    TextColor3 = themes.preset.muted;
+                    Parent = cfg.items["strip"];
+                    AutoButtonColor = false;
+                    BackgroundTransparency = 1;
+                    Size = dim2(0, 0, 1, 0);
+                    AutomaticSize = Enum.AutomaticSize.X;
+                    TextSize = 14;
+                    BorderSizePixel = 0;
+                    LayoutOrder = #cfg.tabs + 1;
+                });
+                library:apply_theme(btn, "muted", "TextColor3")
+                library:create("UICorner", {Parent = btn; CornerRadius = dim(0, 6)})
+
+                local body = library:create("Frame", {
+                    Parent = cfg.items["body"];
+                    BackgroundTransparency = 1;
+                    Name = "\0";
+                    Visible = false;
+                    Size = dim2(1, 0, 1, 0);
+                    BorderSizePixel = 0;
+                });
+                library:create("UIListLayout", {
+                    FillDirection = Enum.FillDirection.Vertical;
+                    HorizontalFlex = Enum.UIFlexAlignment.Fill;
+                    VerticalFlex = Enum.UIFlexAlignment.Fill;
+                    Parent = body;
+                    Padding = dim(0, 10);
+                    SortOrder = Enum.SortOrder.LayoutOrder;
+                })
+
+                page.items["body"] = body
+                page.items["button"] = btn
+
+                function page.open_page()
+                    for _, other in ipairs(cfg.tabs) do
+                        other.items["body"].Visible = false
+                        other.items["button"].TextColor3 = themes.preset.muted
+                    end
+                    body.Visible = true
+                    btn.TextColor3 = themes.preset.accent
+                    cfg.current = page
+                end
+
+                btn.Activated:Connect(page.open_page)
+
+                local page_meta = setmetatable(page, library)
+                table.insert(cfg.tabs, page_meta)
+                if #cfg.tabs == 1 then page.open_page() end
+                return page_meta
+            end
+
+            return setmetatable(cfg, library)
+        end
+
         function library:init_config(window)
             window:seperator({name = "Settings"})
-            local settingsTab = window:tab({name = "Settings", tabs = {"Configs", "Interface", "Theme"}})
+            local cfgPage, ifPage, thPage = window:tab({name = "Settings", tabs = {"Configs", "Interface", "Theme"}})
 
-            local cfgCol = settingsTab:column({})
+            local cfgCol = cfgPage:column({})
             local cfgSection = cfgCol:section({name = "Saved Configs", size = 1, default = true, icon = "rbxassetid://139628202576511"})
             config_holder = cfgSection:list({options = {}, callback = function(name) flags.config_name_list = name end, flag = "config_name_list"})
             library:update_config_list()
 
-            local mgrCol = settingsTab:column({})
+            local mgrCol = cfgPage:column({})
             local mgrSection = mgrCol:section({name = "Config Manager", side = "right", size = 1, default = true, icon = "rbxassetid://129380150574313"})
             mgrSection:textbox({name = "Config name:", flag = "config_name_text", placeholder = "Name for a new config"})
             local function notify(message) notifications:create_notification({name = "Settings", info = message}) end
@@ -3772,7 +4164,7 @@
             end})
 
             -- Interface sub-page: window behavior + icon sizing controls.
-            local ifCol = settingsTab:column({})
+            local ifCol = ifPage:column({})
             local ifSection = ifCol:section({name = "Interface", size = 1, default = true, icon = "rbxassetid://139628202576511"})
 
             ifSection:toggle({name = "Auto resize for screen", flag = "ui_auto_resize", default = window.auto_resize, callback = function(enabled)
@@ -3804,10 +4196,12 @@
                 end
                 library.icons_visible = shown
             end})
-            ifSection:keybind({name = "Menu Bind", callback = function(bool) window.toggle_menu(bool) end, default = true})
+            ifSection:keybind({name = "Menu Bind", key = Enum.KeyCode.RightShift, mode = "Toggle", callback = function(bool)
+                if bool ~= nil then window.toggle_menu(bool) end
+            end, default = true})
 
             -- Theme sub-page: color pickers for each role.
-            local thCol = settingsTab:column({})
+            local thCol = thPage:column({})
             local thSection = thCol:section({name = "Theme", size = 1, default = true, icon = "rbxassetid://129380150574313"})
             thSection:colorpicker({name = "Accent color", callback = function(value) library:update_theme("accent", value) end, color = themes.preset.accent})
             thSection:colorpicker({name = "Window background", callback = function(value) library:update_theme("background", value) end, color = themes.preset.background})

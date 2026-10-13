@@ -158,6 +158,44 @@ end
 demoWindow()
 resizeSection()
 
--- Builds the "Configs" tab: config manager + theme customizer + auto resize toggle.
+-- Sub windows: standalone drag/resize windows with the same component API as the main window.
+local notes = library:sub_window({
+    name = "Notes", suffix = ".lua",
+    position = UDim2.new(0, 40, 0, 220),
+})
+
+do
+    local page = notes:tab({name = "Page A"})
+    local col = page:column({})
+    local section = col:section({name = "Sub Window Section", size = 1, default = true})
+    section:toggle({name = "Works Like Main", seperator = true, callback = function(b) print("[sub A]", b) end})
+    section:slider({name = "Sub Slider", min = 0, max = 100, default = 30, interval = 1, seperator = true, callback = function(v) print("[sub A]", v) end})
+end
+
+do
+    local page2 = notes:tab({name = "Page B"})
+    local col2 = page2:column({})
+    local s2 = col2:section({name = "Second Page", size = 1, default = true})
+    s2:label({name = "Sub window info", info = "This window is draggable by its title bar, resizable at the bottom-right, and closable with the × button. Popups (dropdowns, color pickers) open inside this window, not the main one."})
+end
+
+-- Tab boxes: horizontal tab strips (left/middle/right alignment) inside one content area.
+local box = window:tabbox({side = "middle"})
+local leftPage = box:tab({name = "Box Left"})
+local rightPage = box:tab({name = "Box Right"})
+
+do
+    local col = leftPage:column({})
+    local sec = col:section({name = "Tab Box Left", size = 1, default = true})
+    sec:label({name = "Left tab box", info = "Each tab box has its own independent tab set, just like the main window."})
+end
+
+do
+    local col = rightPage:column({})
+    local sec = col:section({name = "Tab Box Right", size = 1, default = true})
+    sec:toggle({name = "Box Toggle", seperator = true, callback = function(b) print("[box right]", b) end})
+end
+
+-- Builds the "Settings" tab: config manager + interface (resize/icon) + theme pages.
 -- Always call this last so the config list refreshes after every widget is created.
 library:init_config(window)
