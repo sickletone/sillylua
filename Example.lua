@@ -14,6 +14,8 @@
                                           saved configs via __theme.
 
     This example builds a demo window so you can exercise every feature in-game.
+    All the library's own controls (configs, interface/resize, theme, icon sizing)
+    now live under one "Settings" tab, built by library:init_config(window).
     The built-in API surface it exercises:
       library:window(cfg)        -> returns a window object
       window:set_size(w, h)      -> manual resize (auto-resize wins over manual widths)
@@ -153,55 +155,8 @@ local function resizeSection()
     })
 end
 
-local function themeSection()
-    window:seperator({name = "Theme"})
-    local themeTab = window:tab({name = "Theme", tabs = {"Main"}})
-
-    local col = themeTab:column({})
-    local section = col:section({name = "Quick Presets", size = 1, default = true})
-
-    section:label({
-        name = "Built-in customizer lives in the Configs tab",
-        info = "Accent / Background / Surface / Text / Muted pickers are already wired up there. "
-            .. "These buttons just snap the palette into one of the presets below so you can watch "
-            .. "every widget recolor at once.",
-    })
-
-    section:button({
-        name = "Preset: violet",
-        callback = function() library:update_theme("accent", Color3.fromRGB(155, 150, 219)) end,
-    })
-    section:button({
-        name = "Preset: teal",
-        callback = function() library:update_theme("accent", Color3.fromRGB(56, 178, 172)) end,
-    })
-    section:button({
-        name = "Preset: coral",
-        callback = function() library:update_theme("accent", Color3.fromRGB(255, 107, 107)) end,
-    })
-    section:button({
-        name = "Preset: dark mode",
-        callback = function()
-            library:update_theme("background", Color3.fromRGB(14, 14, 16))
-            library:update_theme("surface",    Color3.fromRGB(22, 22, 24))
-            library:update_theme("text",       Color3.fromRGB(245, 245, 245))
-            library:update_theme("muted",      Color3.fromRGB(72, 72, 73))
-        end,
-    })
-    section:button({
-        name = "Preset: light mode",
-        callback = function()
-            library:update_theme("background", Color3.fromRGB(238, 240, 244))
-            library:update_theme("surface",    Color3.fromRGB(250, 250, 252))
-            library:update_theme("text",       Color3.fromRGB(32, 34, 40))
-            library:update_theme("muted",      Color3.fromRGB(126, 130, 140))
-        end,
-    })
-end
-
 demoWindow()
 resizeSection()
-themeSection()
 
 -- Builds the "Configs" tab: config manager + theme customizer + auto resize toggle.
 -- Always call this last so the config list refreshes after every widget is created.

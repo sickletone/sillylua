@@ -217,8 +217,8 @@
             local handle = Instance.new("TextButton")
             handle.Name = "ResizeHandle"
             handle.AnchorPoint = vec2(1, 1)
-            handle.Position = dim2(1, 0, 1, 0)
-            handle.Size = dim2(0, 24, 0, 24)
+            handle.Position = dim2(1, -2, 1, -28)
+            handle.Size = dim2(0, 24, 0, 22)
             handle.BorderSizePixel = 0
             handle.BackgroundColor3 = themes.preset.accent
             handle.BackgroundTransparency = 0.2
@@ -783,7 +783,7 @@
                     Name = "\0";
                     TextColor3 = themes.preset.accent;
                     BorderColor3 = rgb(0, 0, 0);
-                    Text = '<font color="rgb(72, 72, 73)">32 days left, </font>' .. cfg.name .. cfg.suffix;
+                    Text = cfg.name .. cfg.suffix;
                     Size = dim2(1, 0, 0, 0);
                     Position = dim2(0, -10, 0.5, -1);
                     AnchorPoint = vec2(0, 0.5);
@@ -837,8 +837,8 @@
             cfg.design_size = cfg.size
             function cfg:set_size(width, height)
                 local viewport = (ws.CurrentCamera or camera).ViewportSize
-                width = clamp(width, min(320, viewport.X), max(1, viewport.X))
-                height = clamp(height, min(300, viewport.Y), max(1, viewport.Y))
+                width = clamp(width, 320, max(1, viewport.X))
+                height = clamp(height, 300, max(1, viewport.Y))
                 cfg.design_size = dim2(0, width, 0, height)
                 cfg.apply_viewport()
             end
@@ -871,6 +871,7 @@
             local cfg = {
                 name = properties.name or properties.Name or "visuals"; 
                 icon = properties.icon or properties.Icon or "http://www.roblox.com/asset/?id=6034767608";
+                iconSize = properties.iconSize or properties.IconSize or 22;
                 
                 -- multi 
                 tabs = properties.tabs or properties.Tabs or {"Main", "Misc.", "Settings"};
@@ -918,7 +919,7 @@
                         BackgroundTransparency = 1;
                         Position = dim2(0, 10, 0.5, 0);
                         Name = "\0";
-                        Size = dim2(0, 22, 0, 22);
+                        Size = dim2(0, cfg.iconSize, 0, cfg.iconSize);
                         BorderSizePixel = 0;
                         BackgroundColor3 = rgb(255, 255, 255)
                     }); library:apply_theme(items[ "icon" ], "accent", "ImageColor3");
@@ -1296,6 +1297,7 @@
                 default = properties.default or properties.Default or false;
                 size = properties.size or properties.Size or self.size or 0.5; 
                 icon = properties.icon or properties.Icon or "http://www.roblox.com/asset/?id=6022668898";
+                iconSize = properties.iconSize or properties.IconSize or 22;
                 fading_toggle = properties.fading or properties.Fading or false;
                 items = {};
             };
@@ -1405,7 +1407,7 @@
                     BackgroundTransparency = 1;
                     Position = dim2(0, 10, 0.5, 0);
                     Name = "\0";
-                    Size = dim2(0, 22, 0, 22);
+                    Size = dim2(0, cfg.iconSize, 0, cfg.iconSize);
                     BorderSizePixel = 0;
                     BackgroundColor3 = rgb(255, 255, 255)
                 }); library:apply_theme(items[ "Icon" ], "accent", "ImageColor3");
@@ -3695,53 +3697,61 @@
             return setmetatable(cfg, library)
         end 
 
+        -- Runtime icon sizing: call on a tab or section object, returns its ImageLabel.
+        function library:set_icon_size(target, size)
+            if not target or not target.items then return nil end
+            local img = target.items["icon"] or target.items["Icon"]
+            if img then img.Size = dim2(0, size, 0, size) end
+            return img
+        end
+
         function library:init_config(window)
             window:seperator({name = "Settings"})
-            local main = window:tab({name = "Configs", tabs = {"Main"}})
+            local settingsTab = window:tab({name = "Settings", tabs = {"Configs", "Interface", "Theme"}})
 
-            local column = main:column({})
-            local section = column:section({name = "Saved Configs", size = 1, default = true, icon = "rbxassetid://139628202576511"})
-            config_holder = section:list({options = {}, callback = function(name) flags.config_name_list = name end, flag = "config_name_list"})
+            local cfgCol = settingsTab:column({})
+            local cfgSection = cfgCol:section({name = "Saved Configs", size = 1, default = true, icon = "rbxassetid://139628202576511"})
+            config_holder = cfgSection:list({options = {}, callback = function(name) flags.config_name_list = name end, flag = "config_name_list"})
             library:update_config_list()
 
-            local column = main:column({})
-            local section = column:section({name = "Config Manager", side = "right", size = 1, default = true, icon = "rbxassetid://129380150574313"})
-            section:textbox({name = "Config name:", flag = "config_name_text", placeholder = "Name for a new config"})
-            local function notify(message) notifications:create_notification({name = "Configs", info = message}) end
+            local mgrCol = settingsTab:column({})
+            local mgrSection = mgrCol:section({name = "Config Manager", side = "right", size = 1, default = true, icon = "rbxassetid://129380150574313"})
+            mgrSection:textbox({name = "Config name:", flag = "config_name_text", placeholder = "Name for a new config"})
+            local function notify(message) notifications:create_notification({name = "Settings", info = message}) end
             local function selected_name() return library:clean_config_name(flags.config_name_list) end
             local function report(ok, value, action) notify(ok and (action .. tostring(value or "")) or tostring(value)) end
 
-            section:button({name = "Create config", callback = function()
+            mgrSection:button({name = "Create config", callback = function()
                 local ok, value = library:save_named_config(flags.config_name_text, false)
                 report(ok, value, "Created: ")
             end})
-            section:button({name = "Save / overwrite selected", callback = function()
+            mgrSection:button({name = "Save / overwrite selected", callback = function()
                 local name = selected_name()
                 if not name then notify("Select a config to overwrite") return end
                 local ok, value = library:save_named_config(name, true)
                 report(ok, value, "Saved: ")
             end})
-            section:button({name = "Load selected", callback = function()
+            mgrSection:button({name = "Load selected", callback = function()
                 local ok, value = library:load_named_config(selected_name())
                 report(ok, value, "Loaded: ")
             end})
-            section:button({name = "Delete selected", callback = function()
+            mgrSection:button({name = "Delete selected", callback = function()
                 local ok, value = library:delete_named_config(selected_name())
                 report(ok, value, "Deleted: ")
             end})
-            section:button({name = "Refresh config list", callback = function()
+            mgrSection:button({name = "Refresh config list", callback = function()
                 library:update_config_list()
                 notify("Config list refreshed")
             end})
-            section:button({name = "Set selected as auto load", callback = function()
+            mgrSection:button({name = "Set selected as auto load", callback = function()
                 local ok, value = library:set_autoload(selected_name())
                 report(ok, value, "Auto-load set to: ")
             end})
-            section:button({name = "Remove auto load", callback = function()
+            mgrSection:button({name = "Remove auto load", callback = function()
                 local ok, value = library:clear_autoload()
                 notify(ok and "Auto-load removed" or tostring(value))
             end})
-            section:button({name = "Copy selected to clipboard", callback = function()
+            mgrSection:button({name = "Copy selected to clipboard", callback = function()
                 local path = library:config_path(selected_name())
                 if not path or not isfile(path) then notify("Select an existing config first") return end
                 local ok, data = pcall(readfile, path)
@@ -3752,8 +3762,8 @@
                 if not copied and type(writeclipboard) == "function" then copied = pcall(writeclipboard, data) end
                 notify(copied and "Selected config copied to clipboard" or "Clipboard write is unavailable")
             end})
-            section:button({name = "Paste config from clipboard", callback = function()
-                local get_clipboard = getclipboard or readclipboard or get_clipboard
+            mgrSection:button({name = "Paste config from clipboard", callback = function()
+                local get_clipboard = getclipboard or readclipboard
                 if type(get_clipboard) ~= "function" then notify("Clipboard read is unavailable") return end
                 local ok, data = pcall(get_clipboard)
                 if not ok or type(data) ~= "string" or data == "" then notify("Clipboard does not contain config data") return end
@@ -3761,16 +3771,49 @@
                 notify(loaded and "Clipboard config loaded" or ("Invalid config: " .. tostring(err)))
             end})
 
-            section:toggle({name = "Auto resize for screen", flag = "ui_auto_resize", default = window.auto_resize, callback = function(enabled)
+            -- Interface sub-page: window behavior + icon sizing controls.
+            local ifCol = settingsTab:column({})
+            local ifSection = ifCol:section({name = "Interface", size = 1, default = true, icon = "rbxassetid://139628202576511"})
+
+            ifSection:toggle({name = "Auto resize for screen", flag = "ui_auto_resize", default = window.auto_resize, callback = function(enabled)
                 window.auto_resize = enabled
                 window.apply_viewport()
             end})
-            section:colorpicker({name = "Accent color", callback = function(value) library:update_theme("accent", value) end, color = themes.preset.accent})
-            section:colorpicker({name = "Window background", callback = function(value) library:update_theme("background", value) end, color = themes.preset.background})
-            section:colorpicker({name = "Surface color", callback = function(value) library:update_theme("surface", value) end, color = themes.preset.surface})
-            section:colorpicker({name = "Text color", callback = function(value) library:update_theme("text", value) end, color = themes.preset.text})
-            section:colorpicker({name = "Muted text color", callback = function(value) library:update_theme("muted", value) end, color = themes.preset.muted})
-            section:keybind({name = "Menu Bind", callback = function(bool) window.toggle_menu(bool) end, default = true})
+            ifSection:button({name = "Re-fit to viewport", callback = function() window.apply_viewport() end})
+            ifSection:button({name = "Reset to default size", callback = function()
+                if window.design_size then
+                    window:set_size(window.design_size.X.Offset, window.design_size.Y.Offset)
+                end
+            end})
+            ifSection:slider({name = "Icon size", min = 12, max = 40, default = 22, interval = 1, seperator = true, callback = function(value)
+                if window.items and window.items.button_holder then
+                    for _, button in ipairs(window.items.button_holder:GetChildren()) do
+                        local img = button:FindFirstChild("icon")
+                        if img then img.Size = dim2(0, value, 0, value) end
+                    end
+                end
+                library.icon_size = value
+                if window.set_icon_size then window.set_icon_size = nil end
+            end})
+            ifSection:toggle({name = "Show tab icons", seperator = true, default = true, callback = function(shown)
+                if window.items and window.items.button_holder then
+                    for _, button in ipairs(window.items.button_holder:GetChildren()) do
+                        local img = button:FindFirstChild("icon")
+                        if img then img.Visible = shown end
+                    end
+                end
+                library.icons_visible = shown
+            end})
+            ifSection:keybind({name = "Menu Bind", callback = function(bool) window.toggle_menu(bool) end, default = true})
+
+            -- Theme sub-page: color pickers for each role.
+            local thCol = settingsTab:column({})
+            local thSection = thCol:section({name = "Theme", size = 1, default = true, icon = "rbxassetid://129380150574313"})
+            thSection:colorpicker({name = "Accent color", callback = function(value) library:update_theme("accent", value) end, color = themes.preset.accent})
+            thSection:colorpicker({name = "Window background", callback = function(value) library:update_theme("background", value) end, color = themes.preset.background})
+            thSection:colorpicker({name = "Surface color", callback = function(value) library:update_theme("surface", value) end, color = themes.preset.surface})
+            thSection:colorpicker({name = "Text color", callback = function(value) library:update_theme("text", value) end, color = themes.preset.text})
+            thSection:colorpicker({name = "Muted text color", callback = function(value) library:update_theme("muted", value) end, color = themes.preset.muted})
 
             local ok, autoload_name = pcall(readfile, autoload_file)
             if ok and type(autoload_name) == "string" and library:clean_config_name(autoload_name) then
