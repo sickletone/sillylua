@@ -1,162 +1,208 @@
-local library = loadstring(game:HttpGet("https://raw.githubusercontent.com/sickletone/sillylua/refs/heads/main/Library.lua"))()
-
 --[[
-  This ui uses a column way of creating holders for sections, its a bit confusing for newbies so heres an easy explanation:
-  Each column is how much sections sideways you can have, eg normal menus have only two however you can have 3 or 4 or 1 with this library.
-  There is alot of customisability with this library which made it very high in demand.
+    Milenium Library example (updated with the v2 features)
 
-  Also I haven't even got a clue how this got leaked since loads of people had it.
+    What the new Library.lua gives you out of the box:
+      * Floating touch toggle (mobile)  -> shows on touch devices, drag to reposition.
+      * Auto resize                    -> window fits the viewport; toggle lives in
+                                          the "Configs" tab under the Auto Resize section.
+      * Manual resize                  -> grab the "◢" handle at the window's bottom-right
+                                          corner, or call window:set_size(width, height).
+      * Config manager                 -> "Configs" tab: create / overwrite / load / delete
+                                          / refresh / auto-load / clipboard integrate / share.
+      * Theme customizer               -> "Configs" tab: Accent, Window background, Surface,
+                                          Text, and Muted text colors. Colors persist into
+                                          saved configs via __theme.
+
+    This example builds a demo window so you can exercise every feature in-game.
+    The built-in API surface it exercises:
+      library:window(cfg)        -> returns a window object
+      window:set_size(w, h)      -> manual resize (auto-resize wins over manual widths)
+      window:auto_resize         -> boolean you can flip directly
+      window:apply_viewport()    -> re-fit to the current camera's viewport
+      library:update_theme(k, c) -> recolor a named theme role (accent, background, surface, text, muted)
+      library.themes.preset      -> current theme colors (read-only reference)
+      library:init_config(win)   -> builds the Configs tab (leave this last)
+
+    The demo widgets below are pure UI (toggle / slider / dropdown / colorpicker /
+    keybind / label) so nothing here touches gameplay.
 ]]
 
-local window = library:window({name = "nebula", suffix = "tech", gameInfo = "Milenium for Counter-Strike: Global Offensive"})
+local library = loadstring(game:HttpGet("https://raw.githubusercontent.com/sickletone/sillylua/refs/heads/main/Library.lua"))()
 
-window:seperator({name = "General"})
-local enemies, teammates, self_section = window:tab({name = "Example", tabs = {"Enemies", "Teammates", "Self"}})
-for _,tab in {enemies, teammates, self_section} do 
-    local column = tab:column({})
-    local section = column:section({name = "General", default = true, toggle = false})
-    section:label({name = "This is a title!", info = "Hello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawd\nextra info here ig"})
-    
-    local page = tab:sub_tab({order = -10000, size = 2}) -- -1 sets it to the top
-    
-    for i = 1, 2 do 
-        local column = page:column({})
-        local section = column:section({name = "General", default = true})
-        section:toggle({name = "Enable ESP", seperator = true, callback = function(bool) print(bool) end})
-        section:toggle({name = "Through walls", seperator = true})
-        local toggle = section:toggle({name = "Shared ESP", seperator = true}):colorpicker({})
+local DESKTOP_SIZE  = {X = 700, Y = 565}
+local MOBILE_SIZE   = {X = 320, Y = 300}
 
-        -- Sub Section Example
-            local toggle = section:toggle({name = "Name", seperator = true})
-            toggle:colorpicker({})
-            local sub_section = toggle:settings({})
-            sub_section:toggle({name = "Show Display Names", seperator = true})
-            sub_section:dropdown({name = "Font Name", items = {"ProggyTiny", "MonoSpace", "Tahoma"}, default = "MonoSpace", seperator = true})
-            sub_section:colorpicker({name = "Another Colorpicker why not", seperator = true})
-            sub_section:keybind({name = "Keybind", callback = function(bool) print(bool) end, info = "Hello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawd\nextra info here ig"})
-        -- 
+local window = library:window({
+    name     = "silly",
+    suffix   = ".lua",
+    gameInfo = "Milenium Library demo",
+    autoResize = true,
+})
 
-        section:toggle({name = "Weapon", seperator = true, info = "Hello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawd\nextra info here ig"}):colorpicker({})
-        section:dropdown({name = "Flags", items = {"Scoped", "Flashed", "Knocked", "Touched"}, default = {"Scoped", "Flashed", "Knocked"}, multi = true, seperator = true})
-        section:toggle({name = "Other Shit", seperator = false}):colorpicker({})
-    end
-end 
+-- Read back the auto-resize state so we can flip it regardless of what the UI says.
+local initialAutoResize = window.auto_resize
 
-local enemies, teammates, self_section = window:tab({name = "Example", tabs = {"Enemies", "Teammates", "Self"}})
-for _,tab in {enemies, teammates, self_section} do 
-    for i = 1, 2 do 
-        local column = tab:column({})
-        local section = column:section({name = "General", default = true})
-        section:toggle({name = "Enable ESP", seperator = true, callback = function(bool) print(bool) end})
-        section:toggle({name = "Through walls", seperator = true})
-        local toggle = section:toggle({name = "Shared ESP", seperator = true}):colorpicker({})
+local function demoWindow()
+    window:seperator({name = "Setup"})
+    local setupTab = window:tab({name = "Setup", tabs = {"Main"}})
 
-        -- Sub Section Example
-            local toggle = section:toggle({name = "Name", seperator = true})
-            toggle:colorpicker({})
-            local sub_section = toggle:settings({})
-            sub_section:toggle({name = "Show Display Names", seperator = true})
-            sub_section:dropdown({name = "Font Name", items = {"ProggyTiny", "MonoSpace", "Tahoma"}, default = "MonoSpace", seperator = true})
-            sub_section:colorpicker({name = "Another Colorpicker why not", seperator = true})
-            sub_section:keybind({name = "Keybind", callback = function(bool) print(bool) end, info = "Hello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawd\nextra info here ig"})
-        -- 
+    local col = setupTab:column({})
+    local general = col:section({name = "Widget Demo", size = 0.5, default = true})
 
-        section:toggle({name = "Weapon", seperator = true, info = "Hello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawd\nextra info here ig"}):colorpicker({})
-        section:dropdown({name = "Flags", items = {"Scoped", "Flashed", "Knocked", "Touched"}, default = {"Scoped", "Flashed", "Knocked"}, multi = true, seperator = true})
-        section:toggle({name = "Other Shit", seperator = false}):colorpicker({})
-    end
-end 
+    -- Toggle / Slider / Dropdown / Colorpicker / Keybind / Label
+    general:toggle({
+        name = "Demo Toggle",
+        seperator = true,
+        callback = function(bool)
+            print("[Milenium demo] toggle set to", bool)
+        end,
+    })
+    general:slider({
+        name = "Demo Slider",
+        min = 0, max = 100,
+        default = 50, interval = 1,
+        seperator = true,
+        callback = function(value)
+            print("[Milenium demo] slider =", value)
+        end,
+    })
+    general:dropdown({
+        name = "Demo Dropdown",
+        items = {"One", "Two", "Three"},
+        default = "One",
+        seperator = true,
+        callback = function(value)
+            print("[Milenium demo] dropdown =", value)
+        end,
+    })
+    general:keybind({
+        name = "Demo Keybind",
+        callback = function()
+            print("[Milenium demo] keybind fired")
+        end,
+    })
+    general:label({
+        name = "Widget Demo",
+        info = "Toggle, slider, dropdown, keybind, and label above all write to the output window so you can see the callbacks fire.",
+    })
 
+    local themePreview = col:section({name = "Theme Preview", size = 0.5, default = true})
+    -- Exposes the current theme colors so you can see the layout react to
+    -- update_theme() edits made from the Configs tab.
+    themePreview:label({
+        name = "Live Theme",
+        info = table.concat({
+            "Accent      = rgb(" .. tostring(math.floor(library.themes.preset.accent.R * 255))     .. ", " .. tostring(math.floor(library.themes.preset.accent.G * 255))     .. ", " .. tostring(math.floor(library.themes.preset.accent.B * 255))     .. ")",
+            "Background  = rgb(" .. tostring(math.floor(library.themes.preset.background.R * 255)) .. ", " .. tostring(math.floor(library.themes.preset.background.G * 255)) .. ", " .. tostring(math.floor(library.themes.preset.background.B * 255)) .. ")",
+            "Surface     = rgb(" .. tostring(math.floor(library.themes.preset.surface.R * 255))    .. ", " .. tostring(math.floor(library.themes.preset.surface.G * 255))    .. ", " .. tostring(math.floor(library.themes.preset.surface.B * 255))    .. ")",
+            "Text        = rgb(" .. tostring(math.floor(library.themes.preset.text.R * 255))       .. ", " .. tostring(math.floor(library.themes.preset.text.G * 255))       .. ", " .. tostring(math.floor(library.themes.preset.text.B * 255))       .. ")",
+            "Muted       = rgb(" .. tostring(math.floor(library.themes.preset.muted.R * 255))      .. ", " .. tostring(math.floor(library.themes.preset.muted.G * 255))      .. ", " .. tostring(math.floor(library.themes.preset.muted.B * 255))      .. ")",
+        }, "\n"),
+    })
+end
 
-local enemies, teammates, self_section = window:tab({name = "Example", tabs = {"Enemies", "Teammates", "Self"}})
-for _,tab in {enemies, teammates, self_section} do 
-    local column = tab:column({})
-    local section = column:section({name = "General", default = true})
-    section:toggle({name = "Enable ESP", seperator = true, callback = function(bool) print(bool) end})
-    section:toggle({name = "Through walls", seperator = true})
-    local toggle = section:toggle({name = "Shared ESP", seperator = true}):colorpicker({})
+local function resizeSection()
+    window:seperator({name = "Resize"})
+    local resizeTab = window:tab({name = "Resize", tabs = {"Main"}})
 
-    -- Sub Section Example
-        local toggle = section:toggle({name = "Name", seperator = true})
-        toggle:colorpicker({})
-        local sub_section = toggle:settings({})
-        sub_section:toggle({name = "Show Display Names", seperator = true})
-        sub_section:dropdown({name = "Font Name", items = {"ProggyTiny", "MonoSpace", "Tahoma"}, default = "MonoSpace", seperator = true})
-        sub_section:colorpicker({name = "Another Colorpicker why not", seperator = true})
-        sub_section:keybind({name = "Keybind", callback = function(bool) print(bool) end, info = "Hello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawd\nextra info here ig"})
-    -- 
+    local col = resizeTab:column({})
+    local section = col:section({name = "Window Sizing", size = 1, default = true})
 
-    section:toggle({name = "Weapon", seperator = true, info = "Hello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawd\nextra info here ig"}):colorpicker({})
-    section:dropdown({name = "Flags", items = {"Scoped", "Flashed", "Knocked", "Touched"}, default = {"Scoped", "Flashed", "Knocked"}, multi = true, seperator = true})
-    section:toggle({name = "Other Shit", seperator = false}):colorpicker({})
-end 
+    section:label({
+        name = "How to resize",
+        info = "Drag the handle at the window's bottom-right corner for a manual resize. "
+            .. "The Auto Resize toggle in the Configs tab decides whether the window fits "
+            .. "the current viewport automatically.",
+    })
 
-local enemies, teammates, self_section = window:tab({name = "Example", tabs = {"Enemies", "Teammates", "Self"}})
-for _,tab in {enemies, teammates, self_section} do 
-    local column = tab:column({})
+    section:button({
+        name = "Desktop (700 x 565)",
+        callback = function()
+            window:set_size(DESKTOP_SIZE.X, DESKTOP_SIZE.Y)
+            window.apply_viewport()
+        end,
+    })
+    section:button({
+        name = "Compact (480 x 400)",
+        callback = function()
+            window:set_size(480, 400)
+            window.apply_viewport()
+        end,
+    })
+    section:button({
+        name = "Small (320 x 300)",
+        callback = function()
+            window:set_size(MOBILE_SIZE.X, MOBILE_SIZE.Y)
+            window.apply_viewport()
+        end,
+    })
+    section:button({
+        name = "Re-fit to viewport",
+        callback = function()
+            window.apply_viewport()
+        end,
+    })
+    section:toggle({
+        name = "Auto resize",
+        seperator = true,
+        default = initialAutoResize,
+        callback = function(bool)
+            window.auto_resize = bool
+            window.apply_viewport()
+        end,
+    })
+end
 
-    for i = 1, 2 do 
-        local section = column:section({name = "General", default = true, size = 0.5})
-        section:toggle({name = "Enable ESP", seperator = true, callback = function(bool) print(bool) end})
-        section:toggle({name = "Through walls", seperator = true})
-        local toggle = section:toggle({name = "Shared ESP", seperator = true}):colorpicker({})
+local function themeSection()
+    window:seperator({name = "Theme"})
+    local themeTab = window:tab({name = "Theme", tabs = {"Main"}})
 
-        -- Sub Section Example
-            local toggle = section:toggle({name = "Name", seperator = true})
-            toggle:colorpicker({})
-            local sub_section = toggle:settings({})
-            sub_section:toggle({name = "Show Display Names", seperator = true})
-            sub_section:dropdown({name = "Font Name", items = {"ProggyTiny", "MonoSpace", "Tahoma"}, default = "MonoSpace", seperator = true})
-            sub_section:colorpicker({name = "Another Colorpicker why not", seperator = true})
-            sub_section:keybind({name = "Keybind", callback = function(bool) print(bool) end, info = "Hello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawd\nextra info here ig"})
-        -- 
+    local col = themeTab:column({})
+    local section = col:section({name = "Quick Presets", size = 1, default = true})
 
-        section:toggle({name = "Weapon", seperator = true, info = "Hello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawd\nextra info here ig"}):colorpicker({})
-        section:dropdown({name = "Flags", items = {"Scoped", "Flashed", "Knocked", "Touched"}, default = {"Scoped", "Flashed", "Knocked"}, multi = true, seperator = true})
-        section:toggle({name = "Other Shit", seperator = false}):colorpicker({})
-    end 
-end 
+    section:label({
+        name = "Built-in customizer lives in the Configs tab",
+        info = "Accent / Background / Surface / Text / Muted pickers are already wired up there. "
+            .. "These buttons just snap the palette into one of the presets below so you can watch "
+            .. "every widget recolor at once.",
+    })
 
--- OLD DOCUMENTATION
--- for i = 1, 5 do 
---     window:seperator({name = "General"})
---     local enemies, teammates, self_section = window:tab({name = "Players", tabs = {"Enemies", "Teammates", "Self"}})
+    section:button({
+        name = "Preset: violet",
+        callback = function() library:update_theme("accent", Color3.fromRGB(155, 150, 219)) end,
+    })
+    section:button({
+        name = "Preset: teal",
+        callback = function() library:update_theme("accent", Color3.fromRGB(56, 178, 172)) end,
+    })
+    section:button({
+        name = "Preset: coral",
+        callback = function() library:update_theme("accent", Color3.fromRGB(255, 107, 107)) end,
+    })
+    section:button({
+        name = "Preset: dark mode",
+        callback = function()
+            library:update_theme("background", Color3.fromRGB(14, 14, 16))
+            library:update_theme("surface",    Color3.fromRGB(22, 22, 24))
+            library:update_theme("text",       Color3.fromRGB(245, 245, 245))
+            library:update_theme("muted",      Color3.fromRGB(72, 72, 73))
+        end,
+    })
+    section:button({
+        name = "Preset: light mode",
+        callback = function()
+            library:update_theme("background", Color3.fromRGB(238, 240, 244))
+            library:update_theme("surface",    Color3.fromRGB(250, 250, 252))
+            library:update_theme("text",       Color3.fromRGB(32, 34, 40))
+            library:update_theme("muted",      Color3.fromRGB(126, 130, 140))
+        end,
+    })
+end
 
---     for _, v in {enemies, teammates, self_section} do 
---         for s, side in {"left", "right", ""} do 
---             local column = v:column({})
---             local section = column:section({name = "General", size = 0.3, default = true})
---             section:toggle({name = "Enable ESP", seperator = true, callback = function(bool) print(bool) end})
---             section:toggle({name = "Through walls", seperator = true})
---             local toggle = section:toggle({name = "Shared ESP", seperator = true}):colorpicker({})
+demoWindow()
+resizeSection()
+themeSection()
 
---             -- Sub Section Example
---                 local toggle = section:toggle({name = "Name", seperator = true})
---                 toggle:colorpicker({})
---                 local sub_section = toggle:settings({})
---                 sub_section:toggle({name = "Show Display Names", seperator = true})
---                 sub_section:dropdown({name = "Font Name", items = {"ProggyTiny", "MonoSpace", "Tahoma"}, default = "MonoSpace", seperator = true})
---                 sub_section:colorpicker({name = "Another Colorpicker why not", seperator = true})
---                 sub_section:keybind({name = "Keybind", callback = function(bool) print(bool) end, info = "Hello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawd\nextra info here ig"})
---             -- 
-
---             section:toggle({name = "Weapon", seperator = true, info = "Hello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawd\nextra info here ig"}):colorpicker({})
---             section:dropdown({name = "Flags", items = {"Scoped", "Flashed", "Knocked", "Touched"}, default = {"Scoped", "Flashed", "Knocked"}, multi = true, seperator = true})
---             section:toggle({name = "Other Shit", seperator = false}):colorpicker({})
-
---             local section = column:section({name = "General", size = 0.3, default = true})
---             section:toggle({name = "Enable ESP", seperator = true, info = "Hello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawd\nextra info here ig"})
---             section:toggle({name = "Through walls", seperator = true, info = "Hello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawd\nextra info here ig"})
---             local toggle = section:toggle({name = "Shared ESP", seperator = true, info = "Hello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawd\nextra info here ig"}):colorpicker({})
-
---             local section = column:section({name = "General", size = 0.4, default = true})
---             section:toggle({name = "Enable ESP", seperator = true, info = "Hello!!!!!"})
---             section:dropdown({name = "Flags", items = {"Scoped", "Flashed", "Knocked", "Touched"}, default = {"Scoped", "Flashed", "Knocked"}, multi = true, seperator = true, info = "Hello!!!!!"})
---             section:slider({name = "Slider", info = "This is extra info.", min = 0, max = 50, interval = 0.5, callback = function(int) print(int) end, info = "Hello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawd\nextra info here ig"})
---             section:label({name = "This is a title!", info = "Hello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawdHello there this is a paragraph.. adawdawdawd\nextra info here ig"})
---         end 
---     end 
--- end 
-
-
-library:init_config(window) 
+-- Builds the "Configs" tab: config manager + theme customizer + auto resize toggle.
+-- Always call this last so the config list refreshes after every widget is created.
+library:init_config(window)
