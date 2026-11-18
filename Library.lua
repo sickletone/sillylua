@@ -77,7 +77,21 @@
         config_flags = {},
         connections = {},
         notifications = {notifs = {}},
-        current_open;
+        current_open = nil;
+
+        -- Icon provider (molto.pages.dev): providers are lucide, tabler, heroicons,
+        -- solar, material, fluent and phosphor. Tab/section icons can either be a
+        -- Roblox asset URL/id, or a provider icon name such as "user-16-solid".
+        icon_source = "https://molto.pages.dev/source.lua";
+        icon_provider = "lucide";
+        icon_providers = {"lucide", "tabler", "heroicons", "solar", "material", "fluent", "phosphor"};
+        icon_targets = {};
+        -- Editable icon defaults: a provider icon name or a Roblox asset URL.
+        -- default_icon is used by window tabs, default_section_icon by sections
+        -- (group boxes), and default_subtab_icon by tab-box / multi-section sub tabs.
+        default_icon = "rbxassetid://6034767608";
+        default_section_icon = "http://www.roblox.com/asset/?id=6022668898";
+        default_subtab_icon = nil;
     }
 
     local themes = {
@@ -217,32 +231,53 @@
 
         function library:set_resize_handles_visible(shown)
             for _, handle in ipairs(library.resize_handles) do
-                handle.BackgroundTransparency = shown and 0.2 or 1
-                handle.TextTransparency = shown and 0 or 1
+                handle.Visible = shown and true or false
             end
         end
 
-        function library:resizify(frame, min_width, min_height)
+        function library:resizify(frame, min_width, min_height, on_resize)
             min_width = min_width or 320
             min_height = min_height or 300
 
             local handle = Instance.new("TextButton")
             handle.Name = "ResizeHandle"
             handle.AnchorPoint = vec2(1, 1)
-            handle.Position = dim2(1, -2, 1, -28)
-            handle.Size = dim2(0, 24, 0, 22)
+            handle.Position = dim2(1, -4, 1, -4)
+            handle.Size = dim2(0, 18, 0, 18)
             handle.BorderSizePixel = 0
-            handle.BackgroundColor3 = themes.preset.accent
             handle.BackgroundTransparency = 1
-            handle.Text = "◢"
-            handle.TextColor3 = rgb(255, 255, 255)
-            handle.TextTransparency = 1
-            handle.TextSize = 13
+            handle.Text = ""
             handle.AutoButtonColor = false
-            handle.ZIndex = 20
+            handle.ZIndex = 30
             handle.Parent = frame
-            library:apply_theme(handle, "accent", "BackgroundColor3")
             insert(library.resize_handles, handle)
+
+            -- Always-visible corner grip (three diagonal ticks).
+            local grip_lines = {}
+            for index = 1, 3 do
+                local line = library:create("Frame", {
+                    Parent = handle;
+                    AnchorPoint = vec2(1, 1);
+                    Position = dim2(1, -1 - (index - 1) * 4, 1, -1);
+                    Size = dim2(0, 5 + index * 3, 0, 1);
+                    Rotation = 45;
+                    BackgroundColor3 = rgb(120, 120, 126);
+                    BorderSizePixel = 0;
+                    ZIndex = 31;
+                })
+                insert(grip_lines, line)
+            end
+
+            handle.MouseEnter:Connect(function()
+                for _, line in ipairs(grip_lines) do
+                    library:tween(line, {BackgroundColor3 = themes.preset.accent}, Enum.EasingStyle.Quad, 0.15)
+                end
+            end)
+            handle.MouseLeave:Connect(function()
+                for _, line in ipairs(grip_lines) do
+                    library:tween(line, {BackgroundColor3 = rgb(120, 120, 126)}, Enum.EasingStyle.Quad, 0.15)
+                end
+            end)
 
             local resizing, drag_type, start, start_size = false, nil, nil, nil
             local function update_size(position)
@@ -250,11 +285,16 @@
                 local viewport = (ws.CurrentCamera or camera).ViewportSize
                 local scale_object = frame:FindFirstChildOfClass("UIScale")
                 local scale = scale_object and scale_object.Scale or 1
-                local width = clamp(start_size.X.Offset + (position.X - start.X) / scale, min_width, max(1, viewport.X / scale))
-                local height = clamp(start_size.Y.Offset + (position.Y - start.Y) / scale, min_height, max(1, viewport.Y / scale))
-                local window = library.current_window
-                if window and window.items.main == frame and window.set_size then
-                    window:set_size(width, height)
+                if scale <= 0 then scale = 1 end
+
+                -- Keep the resize 1:1 with the cursor, even when the window is scaled.
+                local max_width = max(min_width, (viewport.X - frame.AbsolutePosition.X) / scale)
+                local max_height = max(min_height, (viewport.Y - frame.AbsolutePosition.Y) / scale)
+                local width = clamp(start_size.X.Offset + (position.X - start.X) / scale, min_width, max_width)
+                local height = clamp(start_size.Y.Offset + (position.Y - start.Y) / scale, min_height, max_height)
+
+                if on_resize then
+                    on_resize(width, height)
                 else
                     frame.Size = dim2(0, width, 0, height)
                 end
@@ -494,6 +534,99 @@
             return floor(number * multiplier + 0.5) / multiplier
         end 
 
+        function library:icon_api()
+            if library._icon_api then return library._icon_api end
+            if library._icon_api_failed then return nil end
+
+            local ok, result = pcall(function()
+                local source = game:HttpGet(library.icon_source)
+                local chunk = loadstring(source)
+                if type(chunk) ~= "function" then error("Icon provider could not be loaded") end
+                return chunk()
+            end)
+
+            if ok and type(result) == "table" and type(result.SetProvider) == "function" and type(result.SetIcon) == "function" then
+                library._icon_api = result
+                return result
+            end
+
+            library._icon_api_failed = true
+            return nil
+        end
+
+        function library:is_icon_asset(icon)
+            return type(icon) == "string" and (icon:match("^rbxasset") ~= nil or icon:match("^http") ~= nil or icon:match("^asset") ~= nil)
+        end
+
+        function library:register_icon(instance, icon)
+            for _, target in ipairs(library.icon_targets) do
+                if target.instance == instance then
+                    target.icon = icon
+                    return
+                end
+            end
+            insert(library.icon_targets, {instance = instance; icon = icon})
+        end
+
+        function library:forget_icon(instance)
+            for index = #library.icon_targets, 1, -1 do
+                if library.icon_targets[index].instance == instance then
+                    remove(library.icon_targets, index)
+                end
+            end
+        end
+
+        -- Accepts either a Roblox asset ("rbxassetid://...") or a provider icon name.
+        function library:apply_icon(instance, icon)
+            if not instance or type(icon) ~= "string" then return instance end
+
+            if library:is_icon_asset(icon) then
+                library:forget_icon(instance)
+                instance.Image = icon
+                instance.ImageRectOffset = vec2(0, 0)
+                instance.ImageRectSize = vec2(0, 0)
+                return instance
+            end
+
+            local api = library:icon_api()
+            if api then
+                local ok = pcall(function()
+                    api.SetProvider(library.icon_provider)
+                    api.SetIcon(instance, icon)
+                end)
+                if ok then
+                    library:register_icon(instance, icon)
+                    return instance
+                end
+            end
+
+            -- Keep the name around so switching provider can retry it later.
+            library:register_icon(instance, icon)
+            instance.Image = library.default_icon
+            instance.ImageRectOffset = vec2(0, 0)
+            instance.ImageRectSize = vec2(0, 0)
+            return instance
+        end
+
+        function library:set_icon_provider(provider)
+            library._icon_api_failed = nil
+            local api = library:icon_api()
+            if not api then return false, "Icon provider unavailable" end
+            local ok, err = pcall(api.SetProvider, provider)
+            if not ok then return false, tostring(err) end
+
+            library.icon_provider = provider
+            for index = #library.icon_targets, 1, -1 do
+                local target = library.icon_targets[index]
+                if not target.instance or not target.instance.Parent then
+                    remove(library.icon_targets, index)
+                else
+                    pcall(api.SetIcon, target.instance, target.icon, provider)
+                end
+            end
+            return true, provider
+        end
+
         function library:apply_theme(instance, theme, property)
             themes.utility[theme] = themes.utility[theme] or {}
             themes.utility[theme][property] = themes.utility[theme][property] or {}
@@ -593,10 +726,10 @@
                 name = properties.name or properties.Name or "nebula";
                 game_name = properties.gameInfo or properties.game_info or properties.GameInfo or "Milenium for Counter-Strike: Global Offensive";
                 size = properties.size or properties.Size or dim2(0, 700, 0, 565);
-                selected_tab;
+                selected_tab = nil;
                 items = {};
 
-                tween;
+                tween = nil;
             }
             
             library[ "items" ] = library:create( "ScreenGui" , {
@@ -637,10 +770,14 @@
                     CornerRadius = dim(0, 10)
                 });
                 
-                library:create( "UIStroke" , {
-                    Color = rgb(23, 23, 29);
-                    Parent = items[ "main" ];
-                    ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                -- Hidden storage for tab pages that are not currently open.
+                items[ "cache" ] = library:create( "Frame" , {
+                    Parent = library[ "items" ];
+                    Name = "\0";
+                    Visible = false;
+                    BackgroundTransparency = 1;
+                    Size = dim2(0, 0, 0, 0);
+                    BorderSizePixel = 0
                 });
                 
                 items[ "side_frame" ] = library:create( "Frame" , {
@@ -692,7 +829,6 @@
                 items[ "title" ] = library:create( "TextLabel" , {
                     FontFace = fonts.font;
                     BorderColor3 = rgb(0, 0, 0);
-                    Text = name;
                     Parent = items[ "side_frame" ];
                     Name = "\0";
                     Text = string.format('<u>%s</u><font color = "rgb(255, 255, 255)">%s</font>', cfg.name, cfg.suffix);
@@ -726,24 +862,6 @@
                     BackgroundColor3 = rgb(21, 21, 23)
                 });
                 
-                items[ "shadow" ] = library:create( "ImageLabel" , {
-                    ImageColor3 = rgb(0, 0, 0);
-                    ScaleType = Enum.ScaleType.Slice;
-                    Parent = items[ "main" ];
-                    BorderColor3 = rgb(0, 0, 0);
-                    Name = "\0";
-                    BackgroundColor3 = rgb(255, 255, 255);
-                    Size = dim2(1, 75, 1, 75);
-                    AnchorPoint = vec2(0.5, 0.5);
-                    Image = "rbxassetid://112971167999062";
-                    BackgroundTransparency = 1;
-                    Position = dim2(0.5, 0, 0.5, 0);
-                    SliceScale = 0.75;
-                    ZIndex = -100;
-                    BorderSizePixel = 0;
-                    SliceCenter = rect(vec2(112, 112), vec2(147, 147))
-                });
-                
                 items[ "global_fade" ] = library:create( "Frame" , {
                     Parent = items[ "main" ];
                     Name = "\0";
@@ -756,11 +874,6 @@
                     ZIndex = 2;
                 });                
 
-                library:create( "UICorner" , {
-                    Parent = items[ "shadow" ];
-                    CornerRadius = dim(0, 5)
-                });
-                
                 items[ "info" ] = library:create( "Frame" , {
                     AnchorPoint = vec2(0, 1);
                     Parent = items[ "main" ];
@@ -812,8 +925,8 @@
                     BorderColor3 = rgb(0, 0, 0);
                     Text = cfg.name .. cfg.suffix;
                     Size = dim2(1, 0, 0, 0);
-                    Position = dim2(0, -10, 0.5, -1);
-                    AnchorPoint = vec2(0, 0.5);
+                    Position = dim2(1, -28, 0.5, -1);
+                    AnchorPoint = vec2(1, 0.5);
                     BorderSizePixel = 0;
                     BackgroundTransparency = 1;
                     TextXAlignment = Enum.TextXAlignment.Right;
@@ -827,7 +940,9 @@
             do -- Dragging, resizing and an always-available mobile toggle.
                 library.current_window = cfg
                 library:draggify(items[ "main" ])
-                library:resizify(items[ "main" ])
+                library:resizify(items[ "main" ], 320, 300, function(width, height)
+                    cfg:set_size(width, height, true)
+                end)
                 items[ "mobile_toggle" ] = library:create("TextButton", {
                     Parent = library[ "mobile" ]; Name = "ToggleMenu"; AnchorPoint = vec2(1, 1);
                     Position = dim2(1, -18, 1, -90); Size = dim2(0, 54, 0, 54);
@@ -862,14 +977,17 @@
             cfg.auto_resize = properties.autoResize ~= false and properties.auto_resize ~= false
             if flags.ui_auto_resize ~= nil then cfg.auto_resize = flags.ui_auto_resize end
             cfg.design_size = cfg.size
-            function cfg:set_size(width, height)
-                local viewport = (ws.CurrentCamera or camera).ViewportSize
-                width = clamp(width, 320, max(1, viewport.X))
-                height = clamp(height, 300, max(1, viewport.Y))
+            cfg.default_size = cfg.size
+            cfg.tabs = {}
+            function cfg:set_size(width, height, keep_position)
+                -- Design size is scaled to fit by apply_viewport, so do not clamp it to
+                -- the raw viewport here; that made resizing jump backwards on small screens.
+                width = clamp(width, 320, 4096)
+                height = clamp(height, 300, 4096)
                 cfg.design_size = dim2(0, width, 0, height)
-                cfg.apply_viewport()
+                cfg.apply_viewport(keep_position)
             end
-            cfg.apply_viewport = function()
+            cfg.apply_viewport = function(keep_position)
                 local viewport = (ws.CurrentCamera or camera).ViewportSize
                 local design_width, design_height = cfg.design_size.X.Offset, cfg.design_size.Y.Offset
                 local scale = 1
@@ -880,11 +998,13 @@
                 end
                 items[ "main" ].Size = dim2(0, design_width, 0, design_height)
                 items[ "ui_scale" ].Scale = scale
-                local width, height = design_width * scale, design_height * scale
-                items[ "main" ].Position = dim2(0, max(0, (viewport.X - width) / 2), 0, max(0, (viewport.Y - height) / 2))
+                if not keep_position then
+                    local width, height = design_width * scale, design_height * scale
+                    items[ "main" ].Position = dim2(0, max(0, (viewport.X - width) / 2), 0, max(0, (viewport.Y - height) / 2))
+                end
             end
             cfg.apply_viewport()
-            if ws.CurrentCamera then library:connection(ws.CurrentCamera:GetPropertyChangedSignal("ViewportSize"), cfg.apply_viewport) end
+            if ws.CurrentCamera then library:connection(ws.CurrentCamera:GetPropertyChangedSignal("ViewportSize"), function() cfg.apply_viewport() end) end
 
             function cfg.toggle_menu(bool)
                 library[ "items" ].Enabled = bool
@@ -894,6 +1014,39 @@
                 library:set_owner_gui(library[ "items" ])
             end
             cfg:select()
+
+            -- Change a sidebar tab icon by name or index, e.g.
+            -- window:set_tab_icon("Setup", "user-16-solid")
+            function cfg:set_tab_icon(target, icon)
+                local tab = type(target) == "number" and cfg.tabs[target] or nil
+                if not tab then
+                    for _, candidate in ipairs(cfg.tabs) do
+                        if candidate.name == target then
+                            tab = candidate
+                            break
+                        end
+                    end
+                end
+                if not tab or not tab.set_icon then return false end
+                tab:set_icon(icon)
+                return true
+            end
+
+            -- Change a sub-tab (the row above a tab's sections) icon.
+            -- window:set_subtab_icon("Settings", "Interface", "sliders-horizontal")
+            function cfg:set_subtab_icon(tab_target, subtab_target, icon)
+                local tab = type(tab_target) == "number" and cfg.tabs[tab_target] or nil
+                if not tab then
+                    for _, candidate in ipairs(cfg.tabs) do
+                        if candidate.name == tab_target then
+                            tab = candidate
+                            break
+                        end
+                    end
+                end
+                if not tab or not tab.set_subtab_icon then return false end
+                return tab:set_subtab_icon(subtab_target, icon)
+            end
 
             library:connection(uis.InputBegan, function(input, game_event)
                 if game_event then return end
@@ -906,22 +1059,31 @@
         end 
 
         function library:tab(properties)
+            properties = properties or {}
             local cfg = {
                 name = properties.name or properties.Name or "visuals"; 
-                icon = properties.icon or properties.Icon or "http://www.roblox.com/asset/?id=6034767608";
+                icon = properties.icon or properties.Icon or library.default_icon;
                 iconSize = properties.iconSize or properties.IconSize or 22;
                 
                 -- multi 
                 tabs = properties.tabs or properties.Tabs or {"Main", "Misc.", "Settings"};
+                subTabIcons = properties.subTabIcons or properties.subtabIcons or {};
                 pages = {}; -- data store for multi sections
-                current_multi; 
+                current_multi = nil;
                 
                 items = {};
             } 
 
+            -- Popups (dropdowns, colour pickers) belong to the window this tab lives in.
+            if self.items and self.items[ "main" ] and self.items[ "main" ].Parent then
+                library:set_owner_gui(self.items[ "main" ].Parent)
+            end
+            self.tabs = self.tabs or {}
+            insert(self.tabs, cfg)
+
             local items = cfg.items; do 
                 items[ "tab_holder" ] = library:create( "Frame" , {
-                    Parent = library.cache;
+                    Parent = self.items[ "cache" ];
                     Name = "\0";
                     Visible = false;
                     BackgroundTransparency = 1;
@@ -960,7 +1122,7 @@
                         Size = dim2(0, cfg.iconSize, 0, cfg.iconSize);
                         BorderSizePixel = 0;
                         BackgroundColor3 = rgb(255, 255, 255)
-                    }); library:apply_theme(items[ "icon" ], "accent", "ImageColor3");
+                    }); library:apply_icon(items[ "icon" ], cfg.icon); library:apply_theme(items[ "icon" ], "accent", "ImageColor3");
                     
                     items[ "name" ] = library:create( "TextLabel" , {
                         FontFace = fonts.font;
@@ -1000,7 +1162,7 @@
 
                 -- Multi Sections
                     items[ "multi_section_button_holder" ] = library:create( "Frame" , {
-                        Parent = library.cache;
+                        Parent = self.items[ "cache" ];
                         BackgroundTransparency = 1;
                         Name = "\0";
                         Visible = false;
@@ -1026,7 +1188,20 @@
                     });                        
 
                     for _, section in cfg.tabs do
-                        local data = {items = {}} 
+                        local section_name = type(section) == "table" and (section.name or section.Name or "Main") or tostring(section)
+                        local section_icon = type(section) == "table" and (section.icon or section.Icon)
+                            or cfg.subTabIcons[section_name]
+                            or library.default_subtab_icon
+                        if section_icon == false then section_icon = nil end
+                        local section_icon_size = type(section) == "table" and (section.iconSize or section.IconSize) or 16
+                        local data = {items = {}, name = section_name, icon = section_icon, owner_gui = self.items["main"] and self.items["main"].Parent or library["items"]}
+                        data.tab = cfg
+                        -- Sidebar tab icon (the whole window tab). Use set_subtab_icon for this row.
+                        data.set_icon = function(self_or_icon, maybe_icon)
+                            local icon = maybe_icon
+                            if icon == nil and type(self_or_icon) == "string" then icon = self_or_icon end
+                            if icon ~= nil then cfg:set_icon(icon) end
+                        end
 
                         local multi_items = data.items; do 
                             -- Button
@@ -1051,7 +1226,7 @@
                                     FontFace = fonts.font;
                                     TextColor3 = rgb(62, 62, 63);
                                     BorderColor3 = rgb(0, 0, 0);
-                                    Text = section;
+                                    Text = section_name;
                                     Parent = multi_items[ "button" ];
                                     Name = "\0";
                                     Size = dim2(0, 0, 1, 0);
@@ -1063,11 +1238,26 @@
                                     BackgroundColor3 = rgb(255, 255, 255)
                                 });
                                 
-                                library:create( "UIPadding" , {
+                                multi_items[ "name_padding" ] = library:create( "UIPadding" , {
                                     Parent = multi_items[ "name" ];
                                     PaddingRight = dim(0, 5);
-                                    PaddingLeft = dim(0, 5)
+                                    PaddingLeft = dim(0, section_icon and 27 or 5)
                                 });
+
+                                multi_items[ "icon" ] = library:create( "ImageLabel" , {
+                                    Parent = multi_items[ "button" ];
+                                    AnchorPoint = vec2(0, 0.5);
+                                    Position = dim2(0, 0, 0.5, 0);
+                                    Name = "\0";
+                                    Size = dim2(0, section_icon_size, 0, section_icon_size);
+                                    BackgroundTransparency = 1;
+                                    Image = library.default_icon;
+                                    ImageColor3 = rgb(62, 62, 63);
+                                    Visible = section_icon ~= nil;
+                                    BorderSizePixel = 0;
+                                    BackgroundColor3 = rgb(255, 255, 255)
+                                });
+                                if section_icon then library:apply_icon(multi_items[ "icon" ], section_icon) end
                                 
                                 multi_items[ "accent" ] = library:create( "Frame" , {
                                     BorderColor3 = rgb(0, 0, 0);
@@ -1100,7 +1290,7 @@
 
                             -- Tab 
                                 multi_items[ "tab" ] = library:create( "Frame" , {
-                                    Parent = library.cache;
+                                    Parent = self.items[ "cache" ];
                                     BackgroundTransparency = 1;
                                     Name = "\0";
                                     BorderColor3 = rgb(0, 0, 0);
@@ -1134,6 +1324,25 @@
                         data.button = multi_items[ "button" ]
                         data.page = multi_items[ "tab" ]
                         data.parent = setmetatable(data, library):sub_tab({}).items[ "tab_parent" ]
+
+                        -- Change this sub-tab's icon; accepts a provider name or asset URL.
+                        function data.set_subtab_icon(self_or_icon, maybe_icon)
+                            local icon = maybe_icon
+                            if icon == nil and type(self_or_icon) == "string" then icon = self_or_icon end
+                            if icon == false then
+                                data.icon = nil
+                                multi_items[ "icon" ].Visible = false
+                                multi_items[ "name_padding" ].PaddingLeft = dim(0, 5)
+                                return data
+                            end
+                            if type(icon) ~= "string" then return data end
+                            data.icon = icon
+                            multi_items[ "icon" ].Visible = true
+                            multi_items[ "name_padding" ].PaddingLeft = dim(0, 27)
+                            library:apply_icon(multi_items[ "icon" ], icon)
+                            multi_items[ "icon" ].ImageColor3 = cfg.current_multi == data and themes.preset.accent or rgb(62, 62, 63)
+                            return data
+                        end
                         
                         -- Old column code
                         -- data.left = multi_items[ "left" ]
@@ -1154,14 +1363,16 @@
                                 library:tween(page.text, {TextColor3 = rgb(62, 62, 63)})
                                 library:tween(page.accent, {BackgroundTransparency = 1})
                                 library:tween(page.button, {BackgroundTransparency = 1})
+                                if page.items["icon"] then library:tween(page.items["icon"], {ImageColor3 = rgb(62, 62, 63)}) end
 
                                 page.page.Visible = false
-                                page.page.Parent = library[ "cache" ] 
+                                page.page.Parent = self.items[ "cache" ]
                             end 
                             
                             library:tween(data.text, {TextColor3 = rgb(255, 255, 255)})
                             library:tween(data.accent, {BackgroundTransparency = 0})
                             library:tween(data.button, {BackgroundTransparency = 0})
+                            if multi_items["icon"] then library:tween(multi_items["icon"], {ImageColor3 = themes.preset.accent}) end
                             library:tween(data.page, {Size = dim2(1, 0, 1, 0)}, Enum.EasingStyle.Quad, 0.4)
 
                             data.page.Visible = true
@@ -1179,7 +1390,7 @@
 						cfg.pages[#cfg.pages + 1] = setmetatable(data, library)
                     end 
 
-                    cfg.pages[1].open_page()
+                    if cfg.pages[1] then cfg.pages[1].open_page() end
                 --
             end 
 
@@ -1199,9 +1410,9 @@
                     library:tween(selected_tab[ 3 ], {TextColor3 = rgb(72, 72, 73)})
 
                     selected_tab[ 4 ].Visible = false
-                    selected_tab[ 4 ].Parent = library[ "cache" ]
+                    selected_tab[ 4 ].Parent = self.items[ "cache" ]
                     selected_tab[ 5 ].Visible = false
-                    selected_tab[ 5 ].Parent = library[ "cache" ]
+                    selected_tab[ 5 ].Parent = self.items[ "cache" ]
                 end
 
                 library:tween(items[ "button" ], {BackgroundTransparency = 0})
@@ -1223,6 +1434,29 @@
                 }
 
                 library:close_element()
+            end
+
+            -- Change one of this tab's sub-tab icons by name or index.
+            function cfg:set_subtab_icon(target, icon)
+                local page = type(target) == "number" and cfg.pages[target] or nil
+                if not page then
+                    for _, candidate in ipairs(cfg.pages) do
+                        if candidate.name == target then
+                            page = candidate
+                            break
+                        end
+                    end
+                end
+                if not page or not page.set_subtab_icon then return false end
+                page:set_subtab_icon(icon)
+                return true
+            end
+
+            -- Change this tab's icon at runtime. Accepts a provider icon name
+            -- ("user-16-solid") or a Roblox asset ("rbxassetid://...").
+            function cfg:set_icon(icon)
+                cfg.icon = icon
+                library:apply_icon(items[ "icon" ], icon)
             end
 
             items[ "button" ].Activated:Connect(function()
@@ -1269,7 +1503,7 @@
 
         -- Miscellaneous 
             function library:column(properties) 
-                local cfg = {items = {}, size = properties.size or 1}
+                local cfg = {items = {}, size = properties.size or 1, owner_gui = self.owner_gui or library:popup_parent()}
 
                 local items = cfg.items; do     
                     items[ "column" ] = library:create( "Frame" , {
@@ -1334,9 +1568,10 @@
                 side = properties.side or properties.Side or "left";
                 default = properties.default or properties.Default or false;
                 size = properties.size or properties.Size or self.size or 0.5; 
-                icon = properties.icon or properties.Icon or "http://www.roblox.com/asset/?id=6022668898";
+                icon = properties.icon or properties.Icon or library.default_section_icon;
                 iconSize = properties.iconSize or properties.IconSize or 22;
                 fading_toggle = properties.fading or properties.Fading or false;
+                owner_gui = self.owner_gui or library:popup_parent();
                 items = {};
             };
             
@@ -1448,7 +1683,7 @@
                     Size = dim2(0, cfg.iconSize, 0, cfg.iconSize);
                     BorderSizePixel = 0;
                     BackgroundColor3 = rgb(255, 255, 255)
-                }); library:apply_theme(items[ "Icon" ], "accent", "ImageColor3");
+                }); library:apply_icon(items[ "Icon" ], cfg.icon); library:apply_theme(items[ "Icon" ], "accent", "ImageColor3");
                 
                 items[ "section_title" ] = library:create( "TextLabel" , {
                     FontFace = fonts.font;
@@ -1492,7 +1727,7 @@
                         BorderSizePixel = 0;
                         TextSize = 14;
                         BackgroundColor3 = rgb(58, 58, 62)
-                    });  library:apply_theme(items[ "toggle" ], "accent", "BackgroundColor3");
+                    });
                     
                     library:create( "UICorner" , {
                         Parent = items[ "toggle" ];
@@ -1508,7 +1743,7 @@
                         Position = dim2(0, 1, 0, 1);
                         BorderSizePixel = 0;
                         BackgroundColor3 = rgb(50, 50, 50)
-                    });  library:apply_theme(items[ "toggle_outline" ], "accent", "BackgroundColor3");
+                    });
                     
                     library:create( "UICorner" , {
                         Parent = items[ "toggle_outline" ];
@@ -1569,22 +1804,44 @@
                     library:tween(items[ "toggle_circle" ], {BackgroundColor3 = bool and rgb(255, 255, 255) or rgb(86, 86, 88), Position = bool and dim2(1, -14, 0, 2) or dim2(0, 2, 0, 2)}, Enum.EasingStyle.Quad)
                     library:tween(items[ "fade" ], {BackgroundTransparency = bool and 1 or 0.8}, Enum.EasingStyle.Quad)
                 end 
+                cfg.toggle_section(cfg.default)
             end 
+
+            function cfg:set_icon(icon)
+                cfg.icon = icon
+                library:apply_icon(items[ "Icon" ], icon)
+            end
 
             return setmetatable(cfg, library)
         end  
 
         function library:toggle(options) 
-            local rand = math.random(1, 2) 
+            local kind = options.type or options.kind
+            if type(kind) == "string" then
+                kind = string.lower(kind)
+                if kind == "box" or kind == "check" or kind == "checkbox" then
+                    kind = "checkbox"
+                elseif kind == "switch" or kind == "toggle" then
+                    kind = "toggle"
+                else
+                    kind = nil
+                end
+            else
+                kind = nil
+            end
+            if not kind then
+                kind = (options.box or options.checkbox) and "checkbox" or "toggle"
+            end
+
             local cfg = {
                 enabled = options.enabled or nil,
                 name = options.name or "Toggle",
                 info = options.info or nil,
                 flag = options.flag or library:next_flag(),
                 
-                type = options.type and string.lower(options.type) or rand == 1 and "toggle" or "checkbox"; -- "toggle", "checkbox"
+                type = kind; -- "toggle" (switch) or "checkbox" (box)
 
-                default = options.default or false,
+                default = options.default or options.enabled or false,
                 folding = options.folding or false, 
                 callback = options.callback or function() end,
 
@@ -1687,7 +1944,7 @@
                             BorderSizePixel = 0;
                             TextSize = 14;
                             BackgroundColor3 = rgb(67, 67, 68)
-                        }); library:apply_theme(items[ "toggle_button" ], "accent", "BackgroundColor3");
+                        });
                         
                         library:create( "UICorner" , {
                             Parent = items[ "toggle_button" ];
@@ -1703,7 +1960,7 @@
                             Position = dim2(0, 1, 0, 1);
                             BorderSizePixel = 0;
                             BackgroundColor3 = rgb(22, 22, 24)
-                        }); library:apply_theme(items[ "outline" ], "accent", "BackgroundColor3");
+                        });
                         
                         items[ "tick" ] = library:create( "ImageLabel" , {
                             ImageTransparency = 1;
@@ -1743,7 +2000,7 @@
                             BorderSizePixel = 0;
                             TextSize = 14;
                             BackgroundColor3 = themes.preset.accent
-                        }); library:apply_theme(items[ "toggle_button" ], "accent", "BackgroundColor3");
+                        });
                         
                         library:create( "UICorner" , {
                             Parent = items[ "toggle_button" ];
@@ -1759,7 +2016,7 @@
                             Position = dim2(0, 1, 0, 1);
                             BorderSizePixel = 0;
                             BackgroundColor3 = themes.preset.accent
-                        }); library:apply_theme(items[ "inline" ], "accent", "BackgroundColor3");
+                        });
                         
                         library:create( "UICorner" , {
                             Parent = items[ "inline" ];
@@ -1788,8 +2045,28 @@
                     end 
                 --                
             end;
+
+            -- Folding toggles hide every widget created after them in the section.
+            local fold_target
+            if cfg.folding then
+                fold_target = library:create("Frame", {
+                    Parent = self.items["elements"];
+                    Name = "\0";
+                    BackgroundTransparency = 1;
+                    Size = dim2(1, 0, 0, 0);
+                    BorderSizePixel = 0;
+                    AutomaticSize = Enum.AutomaticSize.Y;
+                })
+                library:create("UIListLayout", {
+                    Parent = fold_target;
+                    Padding = dim(0, 10);
+                    SortOrder = Enum.SortOrder.LayoutOrder;
+                })
+                self.items["elements"] = fold_target
+            end
             
             function cfg.set(bool)
+                cfg.enabled = bool
                 if cfg.type == "checkbox" then 
                     library:tween(items[ "tick" ], {Rotation = bool and 0 or 45, ImageTransparency = bool and 0 or 1})
                     library:tween(items[ "toggle_button" ], {BackgroundColor3 = bool and themes.preset.accent or rgb(67, 67, 68)})
@@ -1802,8 +2079,8 @@
 
                 cfg.callback(bool)
 
-                if cfg.folding then 
-                    elements.Visible = bool
+                if fold_target then
+                    fold_target.Visible = bool
                 end
 
                 flags[cfg.flag] = bool
@@ -2090,13 +2367,14 @@
                 multi_items = {};
                 ignore = options.ignore or false;
                 items = {};
-                y_size;
+                y_size = 0;
                 seperator = options.seperator or options.Seperator or true;
             }   
 
-            cfg.default = options.default or (cfg.multi and {cfg.items[1]}) or cfg.items[1] or "None"
+            cfg.default = options.default or (cfg.multi and {cfg.options[1]}) or cfg.options[1] or "None"
             flags[cfg.flag] = cfg.default
 
+            local popup_gui = self.owner_gui or library:popup_parent()
             local items = cfg.items; do 
                 -- Element
                     items[ "dropdown_object" ] = library:create( "TextButton" , {
@@ -2237,7 +2515,7 @@
                 -- Element Holder
                     items[ "dropdown_holder" ] = library:create( "Frame" , {
                         BorderColor3 = rgb(0, 0, 0);
-                        Parent = library:popup_parent();
+                        Parent = popup_gui;
                         Name = "\0";
                         Visible = true;
                         BackgroundTransparency = 1;
@@ -2309,7 +2587,7 @@
                 local a = bool and cfg.y_size or 0
                 library:tween(items[ "dropdown_holder" ], {Size = dim_offset(items[ "dropdown" ].AbsoluteSize.X, a)})
 
-                items[ "dropdown_holder" ].Position = dim2(0, items[ "dropdown" ].AbsolutePosition.X, 0, items[ "dropdown" ].AbsolutePosition.Y + 80)
+                items[ "dropdown_holder" ].Position = dim2(0, items[ "dropdown" ].AbsolutePosition.X, 0, items[ "dropdown" ].AbsolutePosition.Y + items[ "dropdown" ].AbsoluteSize.Y + 4)
                 if not (self.sanity and library.current_open == self) then 
                     library:close_element(cfg)
                 end
@@ -2400,7 +2678,7 @@
         function library:label(options)
             local cfg = {
                 enabled = options.enabled or nil,
-                name = options.name or "Toggle",
+                name = options.name or "Label",
                 seperator = options.seperator or options.Seperator or false;
                 info = options.info or nil; 
 
@@ -2528,6 +2806,7 @@
                 label = self:label({name = cfg.name, seperator = cfg.seperator})
             end
 
+            local popup_gui = self.owner_gui or library:popup_parent()
             local items = cfg.items; do 
                 -- Component
                     items[ "colorpicker" ] = library:create( "TextButton" , {
@@ -2854,8 +3133,8 @@
 
             function cfg.set_visible(bool)
                 items[ "colorpicker_fade" ].BackgroundTransparency = 0
-                items[ "colorpicker_holder" ].Parent = bool and library:popup_parent() or library[ "other" ]
-                items[ "colorpicker_holder" ].Position = dim_offset(items[ "colorpicker" ].AbsolutePosition.X, items[ "colorpicker" ].AbsolutePosition.Y + items[ "colorpicker" ].AbsoluteSize.Y + 45)
+                items[ "colorpicker_holder" ].Parent = bool and popup_gui or library[ "other" ]
+                items[ "colorpicker_holder" ].Position = dim_offset(items[ "colorpicker" ].AbsolutePosition.X, items[ "colorpicker" ].AbsolutePosition.Y + items[ "colorpicker" ].AbsoluteSize.Y + 4)
 
                 library:tween(items[ "colorpicker_fade" ], {BackgroundTransparency = 1}, Enum.EasingStyle.Quad, 0.4)
                 library:tween(items[ "colorpicker_holder" ], {Position = items[ "colorpicker_holder" ].Position + dim_offset(0, 20)}) -- p100 check
@@ -3134,6 +3413,7 @@
                 active = cfg.active
             }
 
+            local popup_gui = self.owner_gui or library:popup_parent()
             local items = cfg.items; do 
                 -- Component
                     items[ "keybind_element" ] = library:create( "TextButton" , {
@@ -3240,7 +3520,7 @@
                 -- Mode Holder
                     items[ "dropdown" ] = library:create( "Frame" , {
                         BorderColor3 = rgb(0, 0, 0);
-                        Parent = library:popup_parent();
+                        Parent = popup_gui;
                         Name = "\0";
                         BackgroundTransparency = 1;
                         Position = dim2(0, 0, 0, 0);
@@ -3390,7 +3670,7 @@
                 local size = bool and cfg.y_size or 0
                 library:tween(items[ "dropdown" ], {Size = dim_offset(items[ "keybind_holder" ].AbsoluteSize.X, size)})
 
-                items[ "dropdown" ].Position = dim_offset(items[ "keybind_holder" ].AbsolutePosition.X, items[ "keybind_holder" ].AbsolutePosition.Y + items[ "keybind_holder" ].AbsoluteSize.Y + 60)
+                items[ "dropdown" ].Position = dim_offset(items[ "keybind_holder" ].AbsolutePosition.X, items[ "keybind_holder" ].AbsolutePosition.Y + items[ "keybind_holder" ].AbsoluteSize.Y + 4)
             end
         
             items[ "keybind_holder" ].Activated:Connect(function()
@@ -3458,7 +3738,7 @@
 
         function library:button(options) 
             local cfg = {
-                name = options.name or "TextBox",
+                name = options.name or "Button",
                 callback = options.callback or function() end,
                 items = {};
             }
@@ -3529,11 +3809,12 @@
                 sanity = true; -- made this for my own sanity.
             }
 
+            local popup_gui = self.owner_gui or library:popup_parent()
             local items = cfg.items; do
                 items[ "outline" ] = library:create( "Frame" , {
                     Name = "\0";
                     Visible = true;
-                    Parent = library:popup_parent();
+                    Parent = popup_gui;
                     BorderColor3 = rgb(0, 0, 0);
                     Size = dim2(0, 0, 0, 0);
                     ClipsDescendants = true;
@@ -3585,16 +3866,11 @@
                     CornerRadius = dim(0, 7)
                 });
                 
-                library:create( "UICorner" , {
-                    Parent = items[ "fade" ];
-                    CornerRadius = dim(0, 7)
-                });
-                
                 items[ "tick" ] = library:create( "ImageButton" , {
                     Image = "rbxassetid://128797200442698";
                     Name = "\0";
                     AutoButtonColor = false;
-                    Parent = self.items[ "right_components" ];
+                    Parent = self.items[ "right_components" ] or self.items[ "elements" ];
                     BorderColor3 = rgb(0, 0, 0);
                     Size = dim2(0, 16, 0, 16);
                     BorderSizePixel = 0;
@@ -3624,7 +3900,7 @@
                 flag = properties.flag or library:next_flag();    
                 callback = properties.callback or function() end;
                 data_store = {};        
-                current_element;
+                current_element = nil;
             }
 
             local items = cfg.items; do
@@ -3752,6 +4028,9 @@
                 suffix = properties.suffix or properties.Suffix or "";
                 size = properties.size or properties.Size or dim2(0, 420, 0, 320);
                 header_height = properties.headerHeight or properties.header_height or 34;
+                min_width = properties.minWidth or properties.min_width or 320;
+                min_height = properties.minHeight or properties.min_height or 220;
+                icon = properties.icon or properties.Icon;
                 popup_can_escape = properties.popupCanEscape or false;
                 owner_gui = library:create("ScreenGui", {
                     Parent = coregui;
@@ -3801,7 +4080,6 @@
                     BackgroundTransparency = 1;
                     TextXAlignment = Enum.TextXAlignment.Left;
                     BorderSizePixel = 0;
-                    LibraryOrder = 1;
                     TextSize = 16;
                     ZIndex = 6;
                 });
@@ -3811,24 +4089,54 @@
                 items[ "content" ] = nil
             end
 
+            local function apply_title_icon(icon)
+                if not icon then return end
+                if not items[ "icon" ] then
+                    items[ "icon" ] = library:create( "ImageLabel", {
+                        Parent = items[ "titlebar" ];
+                        AnchorPoint = vec2(0, 0.5);
+                        Position = dim2(0, 0, 0.5, 0);
+                        Size = dim2(0, 16, 0, 16);
+                        BackgroundTransparency = 1;
+                        Image = library.default_icon;
+                        BorderSizePixel = 0;
+                        ZIndex = 6;
+                    });
+                    items[ "title" ].Position = dim2(0, 22, 0, 0)
+                    items[ "title" ].Size = dim2(1, -22, 1, 0)
+                end
+                cfg.icon = icon
+                library:apply_icon(items[ "icon" ], icon)
+            end
+            apply_title_icon(cfg.icon)
+
             function cfg.apply_viewport()
                 local viewport = (ws.CurrentCamera or camera).ViewportSize
-                local w = min(cfg.size.X.Offset, viewport.X - 12)
-                local h = min(cfg.size.Y.Offset, viewport.Y - 12)
+                local w = min(cfg.size.X.Offset, max(1, viewport.X - 12))
+                local h = min(cfg.size.Y.Offset, max(1, viewport.Y - 12))
                 cfg.size = dim2(0, w, 0, h)
                 items[ "main" ].Size = cfg.size
                 local pos = items[ "main" ].Position
-                items[ "main" ].Position = dim2(0, clamp(pos.X.Offset, 0, max(0, viewport.X - w)),
-                    0, clamp(pos.Y.Offset, 0, max(0, viewport.Y - h)))
+                local x, y = pos.X.Offset, pos.Y.Offset
+                if pos.X.Scale ~= 0 then x = pos.X.Scale * viewport.X + pos.X.Offset end
+                if pos.Y.Scale ~= 0 then y = pos.Y.Scale * viewport.Y + pos.Y.Offset end
+                items[ "main" ].Position = dim2(0, clamp(x, 0, max(0, viewport.X - w)),
+                    0, clamp(y, 0, max(0, viewport.Y - h)))
             end
 
             function cfg:set_size(width, height)
+                local viewport = (ws.CurrentCamera or camera).ViewportSize
+                width = clamp(width, cfg.min_width, max(cfg.min_width, viewport.X - 12))
+                height = clamp(height, cfg.min_height, max(cfg.min_height, viewport.Y - 12))
                 cfg.size = dim2(0, width, 0, height)
-                cfg.apply_viewport()
+                items[ "main" ].Size = cfg.size
             end
 
             library:draggify(items[ "main" ], cfg.header_height + 4)
-            library:resizify(items[ "main" ], 320, 220)
+            library:resizify(items[ "main" ], cfg.min_width, cfg.min_height, function(width, height)
+                cfg.size = dim2(0, width, 0, height)
+                items[ "main" ].Size = cfg.size
+            end)
 
             -- Mini tab pages: same behavior as main window tabs (mini tab bar), tiny canvas.
             local page_switcher = library:create( "Frame", {
@@ -3852,10 +4160,17 @@
             });
             library:create("UIListLayout", {FillDirection = Enum.FillDirection.Vertical; HorizontalFlex = Enum.UIFlexAlignment.Fill; VerticalFlex = Enum.UIFlexAlignment.Fill; Parent = page_body; Padding = dim(0, 7); SortOrder = Enum.SortOrder.LayoutOrder});
 
+            items["page_switcher"] = page_switcher
+            items["page_body"] = page_body
+
             function cfg:tab(options)
                 options = options or {}
                 local label = options.name or options.Name or "tab"
-                local page = {enabled = true; items = {}; name = label; sub_pages = {}}
+                local icon = options.icon or options.Icon or library.default_subtab_icon
+                if icon == false then icon = nil end
+                local icon_size = options.iconSize or options.IconSize or 16
+                local padding_left = icon and (7 + icon_size + 5) or 10
+                local page = {enabled = true; items = {}; name = label; icon = icon; sub_pages = {}; owner_gui = cfg.owner_gui}
                 local btn = library:create( "TextButton", {
                     FontFace = fonts.font;
                     TextColor3 = themes.preset.muted;
@@ -3867,10 +4182,31 @@
                     BackgroundTransparency = 1;
                     AutomaticSize = Enum.AutomaticSize.X;
                     TextSize = 14;
+                    TextXAlignment = Enum.TextXAlignment.Left;
                     BorderSizePixel = 0;
                     LayoutOrder = #cfg.pages + 1;
                 });
                 library:apply_theme(btn, "muted", "TextColor3")
+
+                local icon_label = library:create("ImageLabel", {
+                    Parent = btn;
+                    AnchorPoint = vec2(0, 0.5);
+                    Position = dim2(0, 10 - padding_left, 0.5, 0);
+                    Name = "\0";
+                    Size = dim2(0, icon_size, 0, icon_size);
+                    BackgroundTransparency = 1;
+                    Image = library.default_icon;
+                    ImageColor3 = themes.preset.muted;
+                    Visible = icon ~= nil;
+                    BorderSizePixel = 0;
+                })
+                if icon then library:apply_icon(icon_label, icon) end
+
+                local padding = library:create("UIPadding", {
+                    Parent = btn;
+                    PaddingLeft = dim(0, padding_left);
+                    PaddingRight = dim(0, 10);
+                })
 
                 local body = library:create( "Frame", {
                     Parent = page_body;
@@ -3884,14 +4220,40 @@
 
                 page.items["body"] = body
                 page.items["button"] = btn
+                page.items["icon"] = icon_label
+                page.column = cfg.column
 
                 function page.open_page()
                     for _, other in ipairs(cfg.pages) do
                         other.items["body"].Visible = false
                         other.items["button"].TextColor3 = themes.preset.muted
+                        other.items["icon"].ImageColor3 = themes.preset.muted
                     end
                     body.Visible = true
                     btn.TextColor3 = themes.preset.accent
+                    icon_label.ImageColor3 = themes.preset.accent
+                    cfg.current_page = page
+                end
+
+                -- Change this page tab's icon at runtime, e.g. page:set_icon("settings").
+                function page.set_icon(self_or_icon, maybe_icon)
+                    local new_icon = maybe_icon
+                    if new_icon == nil and type(self_or_icon) == "string" then new_icon = self_or_icon end
+                    if new_icon == false then
+                        page.icon = nil
+                        icon_label.Visible = false
+                        padding.PaddingLeft = dim(0, 10)
+                        icon_label.Position = dim2(0, 0, 0.5, 0)
+                        return page
+                    end
+                    if type(new_icon) ~= "string" then return page end
+                    page.icon = new_icon
+                    icon_label.Visible = true
+                    padding.PaddingLeft = dim(0, 7 + icon_size + 5)
+                    icon_label.Position = dim2(0, 10 - (7 + icon_size + 5), 0.5, 0)
+                    library:apply_icon(icon_label, new_icon)
+                    icon_label.ImageColor3 = (cfg.current_page == page) and themes.preset.accent or themes.preset.muted
+                    return page
                 end
 
                 btn.Activated:Connect(page.open_page)
@@ -3906,7 +4268,7 @@
 
             function cfg:column(properties)
                 properties = properties or {}
-                local col = {items = {}; size = properties.size or 1}
+                local col = {items = {}; size = properties.size or 1; owner_gui = cfg.owner_gui}
                 local f = library:create("Frame", {
                     Parent = self.items["body"];
                     BackgroundTransparency = 1;
@@ -3940,10 +4302,13 @@
                 ZIndex = 6;
                 BorderSizePixel = 0;
             });
-            close_btn.Activated:Connect(function()
-                cfg.owner_gui.Enabled = false
-                library:set_owner_gui(library[ "items" ])
-            end)
+            local function release_owner()
+                if library.owner_gui == cfg.owner_gui then
+                    library:set_owner_gui(library[ "items" ])
+                end
+            end
+
+            close_btn.Activated:Connect(function() cfg:close() end)
 
             function cfg:open()
                 library:set_owner_gui(cfg.owner_gui)
@@ -3952,15 +4317,126 @@
 
             function cfg:close()
                 cfg.owner_gui.Enabled = false
-                library:set_owner_gui(library[ "items" ])
+                release_owner()
             end
 
             function cfg:destroy()
                 cfg.owner_gui:Destroy()
-                library:set_owner_gui(library[ "items" ])
+                release_owner()
             end
 
+            function cfg:set_title(text)
+                cfg.name = text or cfg.name
+                items[ "title" ].Text = cfg.name .. cfg.suffix
+            end
+
+            function cfg:set_icon(icon)
+                apply_title_icon(icon)
+            end
+
+            -- Change one of this window's page tabs by name or index.
+            -- notes:set_tab_icon("Page A", "settings")
+            function cfg:set_tab_icon(target, icon)
+                local tab = type(target) == "number" and cfg.pages[target] or nil
+                if not tab then
+                    for _, candidate in ipairs(cfg.pages) do
+                        if candidate.name == target then
+                            tab = candidate
+                            break
+                        end
+                    end
+                end
+                if not tab or not tab.set_icon then return false end
+                tab:set_icon(icon)
+                return true
+            end
+
+            cfg.apply_viewport()
+
             return setmetatable(cfg, library)
+        end
+
+        -- Mini window: the same window API in a compact, collapsible frame.
+        function library:mini_window(properties)
+            properties = properties or {}
+            local mini = library:sub_window({
+                name = properties.name or properties.Name or "mini";
+                suffix = properties.suffix or properties.Suffix or "";
+                size = properties.size or properties.Size or dim2(0, 250, 0, 190);
+                position = properties.position or properties.Position;
+                headerHeight = properties.headerHeight or properties.header_height or 30;
+                minWidth = properties.minWidth or properties.min_width or 180;
+                minHeight = properties.minHeight or properties.min_height or 110;
+                icon = properties.icon or properties.Icon;
+            })
+
+            mini.is_mini = true
+            mini.collapsed = false
+            mini.expanded_size = mini.size
+            mini.items["main"].Size = mini.size
+
+            local main = mini.items["main"]
+            local switcher = mini.items["page_switcher"]
+            local body = mini.items["page_body"]
+
+            local collapse_btn = library:create("TextButton", {
+                FontFace = fonts.font;
+                Parent = main;
+                Text = "−";
+                TextColor3 = themes.preset.muted;
+                Name = "\0";
+                AutoButtonColor = false;
+                Size = dim2(0, 22, 0, 22);
+                Position = dim2(1, -46, 0, 4);
+                BackgroundTransparency = 1;
+                TextSize = 18;
+                ZIndex = 7;
+                BorderSizePixel = 0;
+            });
+            library:apply_theme(collapse_btn, "muted", "TextColor3")
+
+            local function set_collapsed(collapsed)
+                collapsed = collapsed and true or false
+                if mini.collapsed == collapsed then return end
+                mini.collapsed = collapsed
+
+                if collapsed then
+                    mini.expanded_size = dim2(0, main.Size.X.Offset, 0, main.Size.Y.Offset)
+                    switcher.Visible = false
+                    body.Visible = false
+                    main.Size = dim2(0, mini.expanded_size.X.Offset, 0, mini.header_height + 10)
+                    collapse_btn.Text = "+"
+                else
+                    local size = mini.expanded_size or mini.size
+                    main.Size = size
+                    mini.size = size
+                    switcher.Visible = true
+                    body.Visible = true
+                    collapse_btn.Text = "−"
+                end
+            end
+
+            function mini:set_collapsed(collapsed)
+                set_collapsed(collapsed)
+            end
+
+            function mini:toggle_collapsed()
+                set_collapsed(not mini.collapsed)
+            end
+
+            function mini:minimize()
+                set_collapsed(true)
+            end
+
+            function mini:expand()
+                set_collapsed(false)
+            end
+
+            collapse_btn.Activated:Connect(function()
+                set_collapsed(not mini.collapsed)
+            end)
+
+            return mini
         end
 
         -- Tab box: a horizontal strip of tabs whose pages live side-by-side.
@@ -3979,17 +4455,23 @@
                 or cfg.side == "right" and Enum.HorizontalAlignment.Right
                 or Enum.HorizontalAlignment.Center
 
+            local popup_gui
             local host
             do
-                -- Parent: existing window content column if available, else next to main frame.
-                local parent_frame = self.items and (self.items["body"] or self.items["column"]) or nil
+                -- Parent: the widget host when called on a page/section, otherwise the current tab.
+                local parent_frame = self.items and (self.items["body"] or self.items["column"] or self.items["tab_parent"] or self.items["elements"]) or nil
+                if not parent_frame and self.items and self.items["global_fade"] then parent_frame = self.items["global_fade"] end
+                if not parent_frame and self.selected_tab then parent_frame = self.selected_tab[4] end
+                if not parent_frame and self.items and self.items["main"] then parent_frame = self.items["main"] end
+
                 host = library:create("Frame", {
-                    Parent = parent_frame; -- nil fallback reparents to PlayerGui later
+                    Parent = parent_frame;
                     BackgroundTransparency = 1;
                     Name = "\0";
                     Size = dim2(1, 0, 1, 0);
                     BorderSizePixel = 0;
                 });
+                popup_gui = host:FindFirstAncestorOfClass("ScreenGui") or self.owner_gui or library:popup_parent()
 
                 -- Tab strip
                 cfg.items["strip"] = library:create("Frame", {
@@ -4025,21 +4507,16 @@
                     SortOrder = Enum.SortOrder.LayoutOrder;
                 })
 
-                if parent_frame == nil then
-                    -- Defer reparenting until a window has a body to attach to.
-                    task.defer(function()
-                        for _, w in ipairs({library.current_window}) do
-                            local body = w and w.items and (w.items["global_fade"] or w.items["tab_holder"])
-                            if body then host.Parent = body break end
-                        end
-                    end)
-                end
             end
 
             function cfg:tab(options)
                 options = options or {}
                 local label = options.name or options.Name or "tab"
-                local page = {items = {}; name = label}
+                local icon = options.icon or options.Icon or library.default_subtab_icon
+                if icon == false then icon = nil end
+                local icon_size = options.iconSize or options.IconSize or 16
+                local padding_left = icon and (7 + icon_size + 5) or 10
+                local page = {items = {}; name = label; icon = icon; owner_gui = popup_gui}
                 local btn = library:create("TextButton", {
                     FontFace = fonts.font;
                     Text = label;
@@ -4050,11 +4527,32 @@
                     Size = dim2(0, 0, 1, 0);
                     AutomaticSize = Enum.AutomaticSize.X;
                     TextSize = 14;
+                    TextXAlignment = Enum.TextXAlignment.Left;
                     BorderSizePixel = 0;
                     LayoutOrder = #cfg.tabs + 1;
                 });
                 library:apply_theme(btn, "muted", "TextColor3")
                 library:create("UICorner", {Parent = btn; CornerRadius = dim(0, 6)})
+
+                local icon_label = library:create("ImageLabel", {
+                    Parent = btn;
+                    AnchorPoint = vec2(0, 0.5);
+                    Position = dim2(0, 10 - padding_left, 0.5, 0);
+                    Name = "\0";
+                    Size = dim2(0, icon_size, 0, icon_size);
+                    BackgroundTransparency = 1;
+                    Image = library.default_icon;
+                    ImageColor3 = themes.preset.muted;
+                    Visible = icon ~= nil;
+                    BorderSizePixel = 0;
+                })
+                if icon then library:apply_icon(icon_label, icon) end
+
+                local padding = library:create("UIPadding", {
+                    Parent = btn;
+                    PaddingLeft = dim(0, padding_left);
+                    PaddingRight = dim(0, 10);
+                })
 
                 local body = library:create("Frame", {
                     Parent = cfg.items["body"];
@@ -4075,15 +4573,40 @@
 
                 page.items["body"] = body
                 page.items["button"] = btn
+                page.items["icon"] = icon_label
+                page.column = cfg.column
 
                 function page.open_page()
                     for _, other in ipairs(cfg.tabs) do
                         other.items["body"].Visible = false
                         other.items["button"].TextColor3 = themes.preset.muted
+                        other.items["icon"].ImageColor3 = themes.preset.muted
                     end
                     body.Visible = true
                     btn.TextColor3 = themes.preset.accent
+                    icon_label.ImageColor3 = themes.preset.accent
                     cfg.current = page
+                end
+
+                -- Change this sub-tab's icon at runtime, e.g. page:set_icon("settings").
+                function page.set_icon(self_or_icon, maybe_icon)
+                    local new_icon = maybe_icon
+                    if new_icon == nil and type(self_or_icon) == "string" then new_icon = self_or_icon end
+                    if new_icon == false then
+                        page.icon = nil
+                        icon_label.Visible = false
+                        padding.PaddingLeft = dim(0, 10)
+                        icon_label.Position = dim2(0, 0, 0.5, 0)
+                        return page
+                    end
+                    if type(new_icon) ~= "string" then return page end
+                    page.icon = new_icon
+                    icon_label.Visible = true
+                    padding.PaddingLeft = dim(0, 7 + icon_size + 5)
+                    icon_label.Position = dim2(0, 10 - (7 + icon_size + 5), 0.5, 0)
+                    library:apply_icon(icon_label, new_icon)
+                    icon_label.ImageColor3 = (cfg.current == page) and themes.preset.accent or themes.preset.muted
+                    return page
                 end
 
                 btn.Activated:Connect(page.open_page)
@@ -4092,6 +4615,44 @@
                 table.insert(cfg.tabs, page_meta)
                 if #cfg.tabs == 1 then page.open_page() end
                 return page_meta
+            end
+
+            function cfg:column(properties)
+                properties = properties or {}
+                local col = {items = {}; size = properties.size or 1; owner_gui = popup_gui}
+                local frame = library:create("Frame", {
+                    Parent = self.items["body"];
+                    BackgroundTransparency = 1;
+                    Name = "\0";
+                    Size = dim2(0, 0, col.size, 0);
+                    BorderSizePixel = 0;
+                });
+                library:create("UIListLayout", {
+                    FillDirection = Enum.FillDirection.Vertical;
+                    HorizontalFlex = Enum.UIFlexAlignment.Fill;
+                    Parent = frame;
+                    Padding = dim(0, 10);
+                    SortOrder = Enum.SortOrder.LayoutOrder;
+                })
+                col.items["column"] = frame
+                return setmetatable(col, library)
+            end
+
+            -- Change a tab-box sub-tab icon by name or index.
+            -- box:set_tab_icon("Box Left", "settings")
+            function cfg:set_tab_icon(target, icon)
+                local tab = type(target) == "number" and cfg.tabs[target] or nil
+                if not tab then
+                    for _, candidate in ipairs(cfg.tabs) do
+                        if candidate.name == target then
+                            tab = candidate
+                            break
+                        end
+                    end
+                end
+                if not tab or not tab.set_icon then return false end
+                tab:set_icon(icon)
+                return true
             end
 
             return setmetatable(cfg, library)
@@ -4173,28 +4734,33 @@
             end})
             ifSection:button({name = "Re-fit to viewport", callback = function() window.apply_viewport() end})
             ifSection:button({name = "Reset to default size", callback = function()
-                if window.design_size then
-                    window:set_size(window.design_size.X.Offset, window.design_size.Y.Offset)
+                if window.default_size then
+                    window:set_size(window.default_size.X.Offset, window.default_size.Y.Offset)
                 end
             end})
-            ifSection:slider({name = "Icon size", min = 12, max = 40, default = 22, interval = 1, seperator = true, callback = function(value)
-                if window.items and window.items.button_holder then
-                    for _, button in ipairs(window.items.button_holder:GetChildren()) do
-                        local img = button:FindFirstChild("icon")
-                        if img then img.Size = dim2(0, value, 0, value) end
+
+            local function each_tab_icon(callback)
+                if not (window.items and window.items.button_holder) then return end
+                for _, child in ipairs(window.items.button_holder:GetChildren()) do
+                    if child:IsA("TextButton") then
+                        for _, descendant in ipairs(child:GetDescendants()) do
+                            if descendant:IsA("ImageLabel") then callback(descendant) end
+                        end
                     end
                 end
+            end
+
+            ifSection:slider({name = "Icon size", min = 12, max = 40, default = 22, interval = 1, seperator = true, callback = function(value)
+                each_tab_icon(function(img) img.Size = dim2(0, value, 0, value) end)
                 library.icon_size = value
-                if window.set_icon_size then window.set_icon_size = nil end
             end})
             ifSection:toggle({name = "Show tab icons", seperator = true, default = true, callback = function(shown)
-                if window.items and window.items.button_holder then
-                    for _, button in ipairs(window.items.button_holder:GetChildren()) do
-                        local img = button:FindFirstChild("icon")
-                        if img then img.Visible = shown end
-                    end
-                end
+                each_tab_icon(function(img) img.Visible = shown end)
                 library.icons_visible = shown
+            end})
+            ifSection:dropdown({name = "Icon provider", items = library.icon_providers, default = library.icon_provider, seperator = true, callback = function(provider)
+                local applied, err = library:set_icon_provider(provider)
+                if not applied then notify(tostring(err)) end
             end})
             ifSection:keybind({name = "Menu Bind", key = Enum.KeyCode.RightShift, mode = "Toggle", callback = function(bool)
                 if bool ~= nil then window.toggle_menu(bool) end
@@ -4259,7 +4825,7 @@
                 info = options.info or "This is extra info!";
                 lifetime = options.lifetime or 3;
                 items = {};
-                outline;
+                outline = nil;
             }
 
             local items = cfg.items; do 
