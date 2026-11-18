@@ -2293,6 +2293,85 @@
                 });                
             end 
 
+            -- Double click / double tap the value to type an exact number.
+            items[ "value" ].Active = true
+            items[ "value" ].AnchorPoint = vec2(1, 0)
+            items[ "value" ].Position = dim2(1, -6, 0, 0)
+            items[ "edit" ] = library:create( "TextBox" , {
+                Parent = items[ "slider_object" ];
+                Name = "\0";
+                AnchorPoint = vec2(1, 0);
+                Position = dim2(1, -4, 0, -2);
+                Size = dim2(0, 86, 0, 22);
+                BackgroundTransparency = 0;
+                BackgroundColor3 = themes.preset.surface;
+                TextColor3 = rgb(245, 245, 245);
+                Text = "";
+                PlaceholderText = "value";
+                FontFace = fonts.small;
+                TextSize = 16;
+                TextXAlignment = Enum.TextXAlignment.Right;
+                ClearTextOnFocus = false;
+                Visible = false;
+                ZIndex = 5;
+                BorderSizePixel = 0;
+            });
+            library:create( "UICorner" , {
+                Parent = items[ "edit" ];
+                CornerRadius = dim(0, 4)
+            });
+            library:create( "UIPadding" , {
+                Parent = items[ "edit" ];
+                PaddingRight = dim(0, 6);
+                PaddingLeft = dim(0, 6)
+            });
+
+            cfg.editing = false
+            local last_value_click = 0
+
+            local function close_value_editor(commit)
+                if not items[ "edit" ].Visible then return end
+                local typed = items[ "edit" ].Text
+                items[ "edit" ].Visible = false
+                items[ "value" ].TextTransparency = 0
+                cfg.editing = false
+                if not commit then return end
+                local cleaned = (tostring(typed):gsub(",", "."):gsub("[^%d%.%-]", ""))
+                local number = tonumber(cleaned)
+                if number then cfg.set(number) end
+            end
+
+            local function open_value_editor()
+                if cfg.editing then return end
+                cfg.editing = true
+                items[ "value" ].TextTransparency = 1
+                items[ "edit" ].Text = tostring(cfg.value)
+                items[ "edit" ].Visible = true
+                items[ "edit" ]:CaptureFocus()
+                items[ "edit" ].CursorPosition = #items[ "edit" ].Text + 1
+                items[ "edit" ].SelectionStart = 1
+            end
+
+            items[ "value" ].InputBegan:Connect(function(input)
+                if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+                local now = os.clock()
+                if now - last_value_click <= 0.4 then
+                    last_value_click = 0
+                    open_value_editor()
+                else
+                    last_value_click = now
+                end
+            end)
+
+            items[ "edit" ].FocusLost:Connect(function()
+                close_value_editor(true)
+            end)
+
+            items[ "edit" ].ReturnPressed:Connect(function()
+                close_value_editor(true)
+                items[ "edit" ]:ReleaseFocus()
+            end)
+
             function cfg.set(value)
                 cfg.value = clamp(library:round(value, cfg.intervals), cfg.min, cfg.max)
 

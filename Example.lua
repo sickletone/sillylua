@@ -9,14 +9,15 @@
       library:section       group box (optionally fading/collapsible)
       library:toggle        switch (type = "toggle") or box (type = "checkbox"),
                             plus folding toggles that collapse later widgets
-      library:slider        min/max/interval slider with suffix + info
+      library:slider        min/max/interval slider with suffix + info;
+                            double click / double tap its value to type one
       library:dropdown      single, multi and scrolling dropdowns
       library:label         text label
       library:colorpicker   color + alpha picker
       library:textbox       text entry (textbox:set)
       library:keybind       Hold / Toggle / Always keybind (keybind:set / set_mode)
       library:button        action button
-      library:list          option list (list:refresh_options)
+      library:list          option list (list.refresh_options)
       library:tabbox        tab strip inside a page (left / middle / right)
       library:sub_window    standalone draggable window with tabs
       library:mini_window   compact sub window that can collapse
@@ -286,7 +287,7 @@ do
         default = 32,
         interval = 1,
         suffix = " studs",
-        info = "Slider with a suffix and an info line.",
+        info = "Slider with a suffix and an info line. Double click / double tap the value to type an exact number.",
         seperator = true,
         callback = function(value)
             print("[demo] walk speed =", value)
@@ -333,8 +334,8 @@ do
     text_entry:button({
         name = "Set name from source",
         callback = function()
-            name_box:set("set by source")
-            notify("Textbox", "name_box:set(\"set by source\")")
+            name_box.set("set by source")
+            notify("Textbox", "name_box.set(\"set by source\")")
         end,
     })
 
@@ -349,8 +350,8 @@ do
     lists:button({
         name = "Refresh list options",
         callback = function()
-            demo_list:refresh_options({"Refreshed A", "Refreshed B", "Refreshed C"})
-            notify("List", "list:refresh_options({...}) replaced every row.")
+            demo_list.refresh_options({"Refreshed A", "Refreshed B", "Refreshed C"})
+            notify("List", "list.refresh_options({...}) replaced every row.")
         end,
     })
 end
@@ -542,7 +543,7 @@ end
 do
     local windows_right = windows_page:column({})
 
-    local sub_section = section(windows_right, "Sub Window", 0.5)
+    local sub_section = section(windows_right, "Sub Window", 0.4)
     sub_section:button({
         name = "Show notes",
         callback = function()
@@ -565,14 +566,23 @@ do
         end,
     })
 
-    local mini_section = section(windows_right, "Mini Window", 0.5)
+    local mini_section = section(windows_right, "Mini Window", 0.6)
+    mini_section:label({
+        name = "Where is it?",
+        info = "The compact Mini window sits at the top left and is draggable. Use Show mini if it was closed; the − and + buttons in its title bar collapse and expand it.",
+        seperator = true,
+    })
     mini_section:toggle({
         name = "Collapsed",
         default = false,
+        -- This callback runs once while the toggle is being created, before the
+        -- mini window exists lower in this file, so guard the upvalue.
         callback = function(on)
-            mini:set_collapsed(on)
+            if mini then mini:set_collapsed(on) end
         end,
     })
+    mini_section:button({name = "Show mini", callback = function() mini:open() end})
+    mini_section:button({name = "Hide mini", callback = function() mini:close() end})
     mini_section:button({name = "Minimize", callback = function() mini:minimize() end})
     mini_section:button({name = "Expand", callback = function() mini:expand() end})
     mini_section:button({name = "Toggle collapse", callback = function() mini:toggle_collapsed() end})
@@ -677,9 +687,10 @@ end
 notes = library:sub_window({
     name = "Notes",
     suffix = ".lua",
-    position = UDim2.new(0, 40, 0, 220),
+    position = UDim2.new(0, 40, 0, 260),
     icon = resolve_icon("page", "Notes"),
 })
+notes.apply_viewport()
 
 do
     local notes_page = page_tab(notes, "Notes")
@@ -746,9 +757,10 @@ end
 mini = library:mini_window({
     name = "Mini",
     suffix = ".lua",
-    position = UDim2.new(0, 40, 0, 560),
+    position = UDim2.new(0, 40, 0, 48),
     icon = resolve_icon("page", "Quick"),
 })
+mini.apply_viewport()
 
 do
     local quick_page = page_tab(mini, "Quick")
