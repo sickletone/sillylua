@@ -2367,9 +2367,12 @@
                 close_value_editor(true)
             end)
 
-            items[ "edit" ].ReturnPressed:Connect(function()
-                close_value_editor(true)
-                items[ "edit" ]:ReleaseFocus()
+            library:connection(uis.InputBegan, function(input)
+                if not cfg.editing then return end
+                if input.KeyCode == Enum.KeyCode.Return or input.KeyCode == Enum.KeyCode.KeypadEnter then
+                    close_value_editor(true)
+                    items[ "edit" ]:ReleaseFocus()
+                end
             end)
 
             function cfg.set(value)
